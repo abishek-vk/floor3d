@@ -1,0 +1,11 @@
+.venv/
+__pycache__/
+*.pyc
+out/
+data/cubicasa5k/
+data/weights/
+data/raw/
+third_party/
+results/runs/
+data/cache/
+app_data/

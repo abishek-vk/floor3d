@@ -1,0 +1,15 @@
+{
+ "fallbacks": [
+  {
+   "stage": "scale",
+   "msg": "OCR scale support too weak (0.0 from 0 texts); keeping door_width"
+  }
+ ],
+ "timings_s": {
+  "ingest": 0.749,
+  "detect": 5.63,
+  "vectorize": 2.203,
+  "extrude": 0.326
+ },
+ "total_s": 8.908
+}

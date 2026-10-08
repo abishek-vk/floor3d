@@ -1,0 +1,383 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Blueprint to 3D</title>
+<style>
+  :root {
+    --bg:#f5f4f0; --surface:#ffffff; --surface-2:#faf9f6; --ink:#1c1c1e; --muted:#66666c; --line:#e1dfd8;
+    --accent:#2f6fde; --accent-ink:#ffffff; --accent-soft:#e6eefc; --ok:#1f8a4c; --warn:#a15c00; --warn-soft:#fff4e0;
+    --err:#c0392b; --err-soft:#fdecea; --radius:12px;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg:#141518; --surface:#1d1f23; --surface-2:#23262b; --ink:#ececee; --muted:#a0a2a8; --line:#33363c;
+      --accent:#6b9cff; --accent-ink:#0d1117; --accent-soft:#1f2a40; --ok:#4cc38a; --warn:#f0b35a; --warn-soft:#3a2c14;
+      --err:#ff7b6e; --err-soft:#3d1d1a;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg:#141518; --surface:#1d1f23; --surface-2:#23262b; --ink:#ececee; --muted:#a0a2a8; --line:#33363c;
+    --accent:#6b9cff; --accent-ink:#0d1117; --accent-soft:#1f2a40; --ok:#4cc38a; --warn:#f0b35a; --warn-soft:#3a2c14;
+    --err:#ff7b6e; --err-soft:#3d1d1a;
+  }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--ink); font:15px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif; }
+  .wrap { max-width:1180px; margin:0 auto; padding:24px 16px 64px; }
+  header { display:flex; align-items:baseline; gap:12px; flex-wrap:wrap; margin-bottom:20px; }
+  header h1 { font-size:22px; margin:0; letter-spacing:-0.01em; }
+  header p { margin:0; color:var(--muted); }
+  .card { background:var(--surface); border:1px solid var(--line); border-radius:var(--radius); padding:20px; margin-bottom:16px; }
+  .card h2 { font-size:15px; margin:0 0 14px; display:flex; align-items:center; gap:8px; }
+  .num { display:inline-grid; place-items:center; width:22px; height:22px; border-radius:50%; background:var(--accent); color:var(--accent-ink); font-size:12px; font-weight:600; }
+  .seg { display:inline-flex; background:var(--surface-2); border:1px solid var(--line); border-radius:10px; padding:3px; margin-bottom:16px; }
+  .seg button { border:0; background:none; color:var(--muted); font:inherit; padding:7px 16px; border-radius:8px; cursor:pointer; }
+  .seg button[aria-selected="true"] { background:var(--surface); color:var(--ink); box-shadow:0 1px 2px #0002; font-weight:600; }
+  .grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(250px,1fr)); gap:12px; }
+  .demo { border:1px solid var(--line); border-radius:10px; overflow:hidden; background:var(--surface-2); cursor:pointer; text-align:left; padding:0; font:inherit; color:inherit; }
+  .demo:hover { border-color:var(--accent); }
+  .demo[aria-pressed="true"] { outline:2px solid var(--accent); border-color:var(--accent); }
+  .demo .th { aspect-ratio:4/3; background:#fff; display:grid; place-items:center; overflow:hidden; border-bottom:1px solid var(--line); }
+  .demo img { max-width:100%; max-height:100%; object-fit:contain; display:block; }
+  .demo .meta { padding:10px 12px; }
+  .demo b { display:block; font-size:14px; }
+  .demo span { color:var(--muted); font-size:13px; }
+  .drop { border:2px dashed var(--line); border-radius:var(--radius); padding:28px 16px; text-align:center; background:var(--surface-2); cursor:pointer; transition:border-color .15s, background .15s; }
+  .drop.over { border-color:var(--accent); background:var(--accent-soft); }
+  .drop strong { display:block; font-size:16px; margin-bottom:4px; }
+  .drop .hint { color:var(--muted); font-size:13px; }
+  .formats { display:grid; grid-template-columns:repeat(auto-fit,minmax(220px,1fr)); gap:12px; margin-top:14px; }
+  .fmt { background:var(--surface-2); border:1px solid var(--line); border-radius:10px; padding:12px 14px; font-size:13px; }
+  .fmt h3 { margin:0 0 6px; font-size:13px; }
+  .fmt ul { margin:0; padding-left:18px; color:var(--muted); }
+  .chips { display:flex; gap:6px; flex-wrap:wrap; margin-bottom:6px; }
+  .chip { font:600 12px/1 ui-monospace,Consolas,monospace; padding:5px 8px; border-radius:6px; background:var(--accent-soft); color:var(--accent); }
+  .picked { display:flex; gap:14px; align-items:center; margin-top:14px; padding:12px; border:1px solid var(--line); border-radius:10px; background:var(--surface-2); }
+  .picked img { width:96px; height:72px; object-fit:contain; background:#fff; border-radius:6px; border:1px solid var(--line); }
+  .picked .pdf { width:96px; height:72px; display:grid; place-items:center; border-radius:6px; background:var(--err-soft); color:var(--err); font-weight:700; }
+  .row { display:flex; gap:16px; align-items:center; flex-wrap:wrap; }
+  label.field { display:flex; flex-direction:column; gap:4px; font-size:13px; color:var(--muted); }
+  input[type=number] { font:inherit; color:var(--ink); background:var(--surface-2); border:1px solid var(--line); border-radius:8px; padding:7px 10px; width:110px; }
+  .btn { font:inherit; font-weight:600; border:0; border-radius:10px; padding:11px 22px; background:var(--accent); color:var(--accent-ink); cursor:pointer; }
+  .btn:disabled { opacity:.45; cursor:not-allowed; }
+  .btn.ghost { background:var(--surface-2); color:var(--ink); border:1px solid var(--line); font-weight:500; text-decoration:none; display:inline-block; }
+  .msg { margin-top:12px; padding:10px 12px; border-radius:8px; font-size:14px; }
+  .msg.err { background:var(--err-soft); color:var(--err); }
+  .msg.warn { background:var(--warn-soft); color:var(--warn); }
+  .steps { list-style:none; padding:0; margin:0; display:grid; gap:8px; }
+  .steps li { display:flex; gap:10px; align-items:center; color:var(--muted); }
+  .steps li .dot { width:18px; height:18px; border-radius:50%; border:2px solid var(--line); flex:none; }
+  .steps li.done { color:var(--ink); }
+  .steps li.done .dot { background:var(--ok); border-color:var(--ok); }
+  .steps li.now { color:var(--ink); font-weight:600; }
+  .steps li.now .dot { border-color:var(--accent); border-top-color:transparent; animation:spin .8s linear infinite; }
+  @keyframes spin { to { transform:rotate(360deg); } }
+  .tabs { display:flex; gap:4px; border-bottom:1px solid var(--line); margin:-4px 0 16px; overflow-x:auto; }
+  .tabs button { font:inherit; border:0; background:none; color:var(--muted); padding:10px 14px; cursor:pointer; border-bottom:2px solid transparent; white-space:nowrap; }
+  .tabs button[aria-selected="true"] { color:var(--ink); border-bottom-color:var(--accent); font-weight:600; }
+  iframe { width:100%; height:min(72vh,760px); border:1px solid var(--line); border-radius:10px; background:var(--surface-2); display:block; }
+  .stats { display:grid; grid-template-columns:repeat(auto-fit,minmax(140px,1fr)); gap:10px; margin-bottom:16px; }
+  .stat { background:var(--surface-2); border:1px solid var(--line); border-radius:10px; padding:10px 12px; }
+  .stat .v { font-size:22px; font-weight:650; font-variant-numeric:tabular-nums; }
+  .stat .k { font-size:12px; color:var(--muted); }
+  table { width:100%; border-collapse:collapse; font-size:14px; }
+  th, td { text-align:left; padding:8px 10px; border-bottom:1px solid var(--line); }
+  th { color:var(--muted); font-weight:500; font-size:12px; text-transform:uppercase; letter-spacing:.04em; }
+  td.n { text-align:right; font-variant-numeric:tabular-nums; }
+  .tablewrap { overflow-x:auto; }
+  .gallery { display:grid; grid-template-columns:repeat(auto-fill,minmax(260px,1fr)); gap:12px; }
+  .gallery figure { margin:0; border:1px solid var(--line); border-radius:10px; overflow:hidden; background:var(--surface-2); }
+  .gallery img { width:100%; aspect-ratio:4/3; object-fit:contain; background:#fff; display:block; cursor:zoom-in; }
+  .gallery figcaption { padding:8px 10px; font-size:13px; }
+  .gallery figcaption small { display:block; color:var(--muted); }
+  .dl { display:grid; grid-template-columns:repeat(auto-fit,minmax(240px,1fr)); gap:10px; }
+  .dl a { display:block; padding:12px 14px; border:1px solid var(--line); border-radius:10px; text-decoration:none; color:var(--ink); background:var(--surface-2); }
+  .dl a:hover { border-color:var(--accent); }
+  .dl a small { display:block; color:var(--muted); }
+  .note { font-size:13px; color:var(--muted); }
+  .hidden { display:none !important; }
+  dialog { border:0; border-radius:12px; padding:0; max-width:95vw; max-height:92vh; background:var(--surface); }
+  dialog img { display:block; max-width:95vw; max-height:88vh; }
+  dialog::backdrop { background:#000a; }
+  @media (max-width:560px) { .card { padding:16px; } header h1 { font-size:19px; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>Blueprint → 3D</h1>
+    <p>Turn a floor plan into a measured, walkable 3D model.</p>
+  </header>
+
+  <section class="card" id="pick">
+    <h2><span class="num">1</span> Choose a floor plan</h2>
+    <div class="seg" role="tablist">
+      <button role="tab" id="tDemo" aria-selected="true">Demo blueprints</button>
+      <button role="tab" id="tUp" aria-selected="false">Upload your own</button>
+    </div>
+
+    <div id="pDemo">
+      <div class="grid" id="demos"></div>
+    </div>
+
+    <div id="pUp" class="hidden">
+      <div class="drop" id="drop" tabindex="0" role="button" aria-label="Choose a floor plan file">
+        <strong>Drop a floor plan here, or click to browse</strong>
+        <span class="hint">PNG, JPG/JPEG or PDF · up to <span id="maxmb">25</span> MB</span>
+        <input type="file" id="file" class="hidden" accept=".png,.jpg,.jpeg,.pdf,image/png,image/jpeg,application/pdf">
+      </div>
+      <div class="formats">
+        <div class="fmt">
+          <h3>Accepted file formats</h3>
+          <div class="chips"><span class="chip">.png</span><span class="chip">.jpg</span><span class="chip">.jpeg</span><span class="chip">.pdf</span></div>
+          <ul>
+            <li>PDF: the <b>first page</b> is used.</li>
+            <li>Maximum size 25 MB.</li>
+            <li>Other formats (HEIC, TIFF, DWG, SVG) are not supported. Export to PNG or PDF first.</li>
+          </ul>
+        </div>
+        <div class="fmt">
+          <h3>For best results</h3>
+          <ul>
+            <li>A top-down architectural floor plan: a scan, export or screenshot, not a photo taken at an angle.</li>
+            <li>At least 800 px on the long side; one floor per image works best.</li>
+            <li>Dark walls on a light background.</li>
+          </ul>
+        </div>
+        <div class="fmt">
+          <h3>Real-world size</h3>
+          <ul>
+            <li>Dimension text such as <code>3600</code>, <code>3.6 m</code>, <code>12'6"</code>, <code>3.4 x 4.1 m</code> or room areas (<code>12.5 m²</code>) lets it measure true size.</li>
+            <li>Without them, size is estimated from door widths (≈ 0.78 m).</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+
+    <div class="picked hidden" id="picked"></div>
+    <div class="msg err hidden" id="pickErr"></div>
+  </section>
+
+  <section class="card">
+    <h2><span class="num">2</span> Analyse</h2>
+    <div class="row">
+      <label class="field">Wall height (m)
+        <input type="number" id="wallH" min="2" max="6" step="0.1" value="2.7">
+      </label>
+      <button class="btn" id="go" disabled>Analyse floor plan</button>
+      <span class="note" id="goNote">Pick a demo or upload a file first.</span>
+    </div>
+    <div id="prog" class="hidden" style="margin-top:16px">
+      <ol class="steps" id="steps"></ol>
+      <p class="note" id="elapsed"></p>
+    </div>
+    <div class="msg err hidden" id="runErr"></div>
+  </section>
+
+  <section class="card hidden" id="res">
+    <h2><span class="num">3</span> Result <span class="note" id="resName" style="font-weight:400"></span></h2>
+    <div class="tabs" role="tablist">
+      <button role="tab" data-t="v3d" aria-selected="true">3D model</button>
+      <button role="tab" data-t="vrooms" aria-selected="false">Rooms &amp; measurements</button>
+      <button role="tab" data-t="vstages" aria-selected="false">Analysis stages</button>
+      <button role="tab" data-t="vdl" aria-selected="false">Downloads</button>
+    </div>
+    <div data-p="v3d">
+      <iframe id="viewer" title="3D model viewer"></iframe>
+      <p class="note">Drag to orbit, scroll to zoom. <b>Walk</b>: click it, then WASD + mouse, Esc to exit. <b>2D plan</b> shows the drawing underneath.
+        <a id="openFull" target="_blank" rel="noopener">Open full screen ↗</a></p>
+    </div>
+    <div data-p="vrooms" class="hidden">
+      <div class="stats" id="stats"></div>
+      <div class="msg warn hidden" id="scaleWarn"></div>
+      <div class="tablewrap"><table id="rooms"></table></div>
+      <div id="notes" class="note" style="margin-top:12px"></div>
+    </div>
+    <div data-p="vstages" class="hidden"><div class="gallery" id="gallery"></div></div>
+    <div data-p="vdl" class="hidden"><div class="dl" id="dl"></div></div>
+  </section>
+</div>
+<dialog id="zoom"><img alt=""></dialog>
+
+<script>
+const $ = s => document.querySelector(s);
+const STEPS = [["ingest","Reading and cleaning the image"],["detect","Detecting walls, rooms, doors and windows"],
+  ["vectorize","Vectorising walls, building rooms, reading dimensions, solving for scale"],["extrude","Building the 3D model"],["viewer","Preparing the 3D viewer"]];
+const CAPTIONS = {
+  input:["Input","The plan as uploaded"], binary:["Binarised ink","Dark strokes separated from paper"],
+  seg_overlay:["Network segmentation","Room types, walls, doors (red) and windows (blue)"],
+  walls_classical:["Classical walls","Thick strokes kept by morphology"],
+  walls_fused:["Fused walls","Red: final · green: network · blue: classical"],
+  walls_raw_segments:["Wall centrelines","Vectorised segments with thickness"],
+  barrier:["Closed boundaries","Walls + openings used to enclose rooms"], layout:["Final layout","Rooms, walls, doors and windows"]};
+const SCALE_TXT = {
+  "ocr+solver":["Measured from dimension text on the drawing, refined by the constraint solver.", false],
+  "ocr":["Measured from dimension text on the drawing.", false],
+  "door_width":["Estimated from door widths (no usable dimension text was found). Sizes are approximate, typically within 10-15%.", true],
+  "default":["No dimension text or doors were found, so a default scale was assumed. Sizes are rough guesses.", true]};
+let choice = null, demos = [];
+
+function esc(s){ return String(s).replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c])); }
+function show(el, on){ el.classList.toggle("hidden", !on); }
+
+// ---- source tabs
+function setSrc(up){
+  $("#tDemo").setAttribute("aria-selected", !up); $("#tUp").setAttribute("aria-selected", up);
+  show($("#pDemo"), !up); show($("#pUp"), up);
+}
+$("#tDemo").onclick = () => setSrc(false);
+$("#tUp").onclick = () => setSrc(true);
+
+// ---- demos
+fetch("/api/demos").then(r => r.json()).then(list => {
+  demos = list;
+  $("#demos").innerHTML = list.map(d => `
+    <button class="demo" data-id="${esc(d.id)}" aria-pressed="false">
+      <div class="th"><img src="/demos/${esc(d.id)}_thumb.jpg" alt="${esc(d.title)} floor plan" loading="lazy"></div>
+      <div class="meta"><b>${esc(d.title)}</b><span>${esc(d.description)}</span></div>
+    </button>`).join("");
+  document.querySelectorAll(".demo").forEach(b => b.onclick = () => {
+    document.querySelectorAll(".demo").forEach(x => x.setAttribute("aria-pressed", x === b));
+    const d = demos.find(x => x.id === b.dataset.id);
+    choose({kind:"demo", id:d.id, name:d.title, thumb:`/demos/${d.id}_thumb.jpg`});
+  });
+});
+
+// ---- upload
+const ACCEPT = [".png",".jpg",".jpeg",".pdf"], MAX = 25 * 1024 * 1024;
+const drop = $("#drop"), file = $("#file");
+drop.onclick = () => file.click();
+drop.onkeydown = e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); file.click(); } };
+["dragenter","dragover"].forEach(ev => drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.add("over"); }));
+["dragleave","drop"].forEach(ev => drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.remove("over"); }));
+drop.addEventListener("drop", e => { if (e.dataTransfer.files[0]) takeFile(e.dataTransfer.files[0]); });
+file.onchange = () => { if (file.files[0]) takeFile(file.files[0]); };
+function takeFile(f){
+  const ext = (f.name.match(/\.[^.]+$/) || [""])[0].toLowerCase();
+  if (!ACCEPT.includes(ext)) return pickError(`"${f.name}" is not a supported format. Please upload a PNG, JPG/JPEG or PDF file.`);
+  if (f.size > MAX) return pickError(`"${f.name}" is ${(f.size/1048576).toFixed(1)} MB; the limit is 25 MB.`);
+  if (f.size === 0) return pickError(`"${f.name}" is empty.`);
+  document.querySelectorAll(".demo").forEach(x => x.setAttribute("aria-pressed", false));
+  choose({kind:"upload", file:f, name:f.name, thumb: ext === ".pdf" ? null : URL.createObjectURL(f)});
+}
+function pickError(m){ $("#pickErr").textContent = m; show($("#pickErr"), true); }
+
+function choose(c){
+  choice = c; show($("#pickErr"), false);
+  const p = $("#picked");
+  p.innerHTML = (c.thumb ? `<img src="${c.thumb}" alt="">` : `<div class="pdf">PDF</div>`) +
+    `<div><b>${esc(c.name)}</b><div class="note">${c.kind === "demo" ? "Demo blueprint" :
+      `Your file · ${(c.file.size/1048576).toFixed(2)} MB${c.name.toLowerCase().endsWith(".pdf") ? " · first page will be used" : ""}`}</div></div>`;
+  show(p, true);
+  $("#go").disabled = false; $("#goNote").textContent = "Takes about 10-30 seconds.";
+}
+
+// ---- analyse
+$("#go").onclick = async () => {
+  if (!choice) return;
+  $("#go").disabled = true; show($("#runErr"), false); show($("#res"), false);
+  renderSteps("queued");
+  show($("#prog"), true);
+  const wh = String(Math.min(6, Math.max(2, parseFloat($("#wallH").value) || 2.7)));
+  try {
+    let r;
+    if (choice.kind === "demo") {
+      r = await fetch("/api/analyze/demo", {method:"POST", headers:{"Content-Type":"application/json","X-Wall-Height":wh}, body:JSON.stringify({id:choice.id})});
+    } else {
+      r = await fetch("/api/analyze/upload", {method:"POST", headers:{"X-Filename":encodeURIComponent(choice.name),"X-Wall-Height":wh,"Content-Type":"application/octet-stream"}, body:choice.file});
+    }
+    const j = await r.json();
+    if (!r.ok) throw new Error(j.error || "Upload failed");
+    poll(j.job);
+  } catch (e) { fail(e.message); }
+};
+
+function renderSteps(stage){
+  const idx = STEPS.findIndex(s => s[0] === stage);
+  $("#steps").innerHTML = STEPS.map(([k, label], i) => {
+    const cls = stage === "done" || (idx >= 0 && i < idx) ? "done" : (i === idx || (stage === "queued" && i === 0) ? "now" : "");
+    return `<li class="${cls}"><span class="dot"></span>${label}</li>`;
+  }).join("");
+}
+function fail(m){ $("#runErr").textContent = m; show($("#runErr"), true); show($("#prog"), false); $("#go").disabled = false; }
+
+async function poll(id){
+  try {
+    const j = await (await fetch(`/api/jobs/${id}`)).json();
+    renderSteps(j.stage); $("#elapsed").textContent = `${j.elapsed_s.toFixed(0)} s elapsed`;
+    if (j.status === "error") return fail("The analysis failed: " + (j.error || "unknown error"));
+    if (j.status !== "done") return setTimeout(() => poll(id), 700);
+    await showResult(j);
+    $("#go").disabled = false;
+  } catch (e) { setTimeout(() => poll(id), 1500); }
+}
+
+// ---- results
+document.querySelectorAll(".tabs button").forEach(b => b.onclick = () => {
+  document.querySelectorAll(".tabs button").forEach(x => x.setAttribute("aria-selected", x === b));
+  document.querySelectorAll("[data-p]").forEach(p => show(p, p.dataset.p === b.dataset.t));
+});
+function area(P){ let a=0; for(let i=0;i<P.length;i++){const [x1,y1]=P[i],[x2,y2]=P[(i+1)%P.length]; a+=x1*y2-x2*y1;} return Math.abs(a)/2; }
+function ext(P){ const xs=P.map(p=>p[0]), ys=P.map(p=>p[1]); return [Math.max(...xs)-Math.min(...xs), Math.max(...ys)-Math.min(...ys)]; }
+
+async function showResult(j){
+  const L = await (await fetch(j.files.layout)).json();
+  const s = L.meters_per_px;
+  $("#resName").textContent = "· " + JOBS_NAME(j);
+  $("#viewer").src = j.files.viewer; $("#openFull").href = j.files.viewer;
+
+  const levels = (L.meta && L.meta.levels && L.meta.levels.length > 1) ? L.meta.levels : null;
+  const lvName = i => { const l = levels && levels.find(x => x.index === i); return l ? l.name : ""; };
+  const rooms = L.rooms.filter(r => r.polygon.length >= 3).map(r => {
+    const [w, d] = ext(r.polygon).map(v => v * s);
+    return {name: r.label || (r.type === "Undefined" ? "Room" : r.type), type: r.type, w: Math.min(w,d), l: Math.max(w,d),
+            a: area(r.polygon) * s * s, lv: r.level || 0};
+  }).sort((a, b) => (a.lv - b.lv) || (b.a - a.a));
+  const interior = rooms.filter(r => r.type !== "Outdoor").reduce((t, r) => t + r.a, 0);
+  const doors = L.openings.filter(o => o.type === "door").length, wins = L.openings.length - doors;
+  const stat = (v, k) => `<div class="stat"><div class="v">${v}</div><div class="k">${k}</div></div>`;
+  $("#stats").innerHTML = stat(rooms.length, "rooms") + stat(doors, "doors") + stat(wins, "windows") +
+    stat(interior.toFixed(1) + " m²", "interior floor area") + stat(`${(L.width*s).toFixed(1)} × ${(L.height*s).toFixed(1)} m`, "drawing extent") +
+    stat((L.furniture || []).length, "fixtures / furniture") +
+    (levels ? stat(levels.length, "storeys, stacked: " + levels.map(l => esc(l.name)).join(" / ")) : "");
+  const sc = SCALE_TXT[L.scale_source] || [L.scale_source, true];
+  $("#scaleWarn").textContent = "Scale: " + sc[0];
+  $("#scaleWarn").className = "msg " + (sc[1] ? "warn" : "") ; show($("#scaleWarn"), true);
+  if (!sc[1]) { $("#scaleWarn").style.background = "var(--accent-soft)"; $("#scaleWarn").style.color = "var(--ink)"; }
+  else { $("#scaleWarn").style.background = ""; $("#scaleWarn").style.color = ""; }
+  $("#rooms").innerHTML = `<tr>${levels ? "<th>Floor</th>" : ""}<th>Room</th><th>Type</th><th class="n">Width (m)</th><th class="n">Length (m)</th><th class="n">Area (m²)</th></tr>` +
+    rooms.map(r => `<tr>${levels ? `<td>${esc(lvName(r.lv))}</td>` : ""}<td>${esc(r.name)}</td><td>${esc(r.type)}</td><td class="n">${r.w.toFixed(2)}</td><td class="n">${r.l.toFixed(2)}</td><td class="n">${r.a.toFixed(1)}</td></tr>`).join("");
+  const fb = (j.report && j.report.fallbacks || []).filter(f => !["walls"].includes(f.stage));
+  const sol = L.meta && L.meta.solver;
+  const bad = sol ? sol.annotations.filter(a => a.inconsistent) : [];
+  $("#notes").innerHTML =
+    (sol ? `<p>Dimension solver: fitted ${sol.annotations.length} annotation(s) from the drawing${bad.length ? `; <b>${bad.length} disagree with the rest of the drawing</b>: ${bad.map(a => esc(a.text)).join(", ")}` : ", all consistent"}.</p>` : "") +
+    (fb.length ? `<p>Notes from the analysis:</p><ul>${fb.map(f => `<li>${esc(f.msg)}</li>`).join("")}</ul>` : "") +
+    `<p>Total time ${j.report ? j.report.wall_clock_s : "?"} s. Widths and lengths are the room's bounding extents.</p>`;
+
+  $("#gallery").innerHTML = j.debug.map(u => {
+    const key = u.split("/").pop().replace(/^\d+_/, "").replace(/\.png$/, "");
+    const [t, d] = CAPTIONS[key] || [key, ""];
+    return `<figure><img src="${u}" alt="${esc(t)}" loading="lazy"><figcaption>${esc(t)}<small>${esc(d)}</small></figcaption></figure>`;
+  }).join("");
+  document.querySelectorAll(".gallery img").forEach(im => im.onclick = () => { $("#zoom img").src = im.src; $("#zoom").showModal(); });
+
+  const dl = (href, name, desc) => `<a href="${href}" download><b>${name}</b><small>${desc}</small></a>`;
+  $("#dl").innerHTML =
+    dl(j.files.glb + "?download=1", "model.glb", "3D model (glTF binary): Blender, three.js, Windows 3D Viewer") +
+    dl(j.files.obj + "?download=1", "model.obj", "3D model as OBJ (download material.mtl too)") +
+    dl(j.files.mtl + "?download=1", "material.mtl", "Materials for the OBJ") +
+    dl(j.files.layout + "?download=1", "layout.json", "Walls, doors, windows, rooms in pixels + metres per pixel") +
+    dl(j.files.viewer, "viewer.html", "Self-contained 3D viewer you can share (open in a browser)") +
+    dl(j.files.report + "?download=1", "run_report.json", "Timings and any fallbacks used");
+
+  show($("#prog"), false); show($("#res"), true);
+  document.querySelector('.tabs button[data-t="v3d"]').click();
+  $("#res").scrollIntoView({behavior:"smooth", block:"start"});
+}
+function JOBS_NAME(j){ return j.name; }
+fetch("/api/formats").then(r => r.json()).then(f => $("#maxmb").textContent = f.max_mb).catch(() => {});
+</script>
+</body>
+</html>

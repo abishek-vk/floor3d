@@ -1,0 +1,310 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Floor Plan 3D</title>
+<style>
+  :root { --bg:#f4f3ef; --panel:#ffffffee; --ink:#1d1d1f; --muted:#6b6b70; --accent:#2f6fde; --line:#d9d7d0; }
+  @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --bg:#16171a; --panel:#23252aee; --ink:#ececee; --muted:#9a9ca3; --accent:#6b9cff; --line:#3a3c42; } }
+  :root[data-theme="dark"] { --bg:#16171a; --panel:#23252aee; --ink:#ececee; --muted:#9a9ca3; --accent:#6b9cff; --line:#3a3c42; }
+  html,body { margin:0; height:100%; background:var(--bg); color:var(--ink); font:14px/1.4 system-ui,-apple-system,"Segoe UI",sans-serif; overflow:hidden; }
+  #app { position:fixed; inset:0; }
+  #ui { position:fixed; top:12px; left:12px; right:12px; display:flex; flex-wrap:wrap; gap:8px; align-items:center; pointer-events:none; }
+  #ui > * { pointer-events:auto; }
+  .pill { background:var(--panel); border:1px solid var(--line); border-radius:10px; padding:6px 10px; backdrop-filter:blur(6px); }
+  button { font:inherit; color:var(--ink); background:var(--panel); border:1px solid var(--line); border-radius:8px; padding:6px 12px; cursor:pointer; }
+  button[aria-pressed="true"] { background:var(--accent); color:#fff; border-color:var(--accent); }
+  #info { position:fixed; bottom:12px; left:12px; max-width:min(420px, calc(100% - 24px)); font-size:12px; color:var(--muted); }
+  #legend { position:fixed; top:64px; right:12px; width:210px; max-height:calc(100% - 140px); overflow:auto; font-size:12px; padding:8px 10px; }
+  #legend h4 { margin:2px 0 6px; font-size:12px; color:var(--muted); font-weight:600; display:flex; justify-content:space-between; align-items:center; }
+  #legend h4 button { padding:1px 8px; font-size:11px; }
+  #legend .it { display:flex; align-items:center; gap:8px; width:100%; text-align:left; border:0; background:none; padding:4px 2px; border-radius:6px; cursor:pointer; font-size:12px; }
+  #legend .it:hover { background:var(--line); }
+  #legend .it.off { opacity:.4; text-decoration:line-through; }
+  #legend .sw { width:14px; height:14px; border-radius:4px; border:1px solid #0003; flex:none; }
+  #legend .sub { padding-left:12px; }
+  #legend.collapsed .body { display:none; }
+  @media (max-width:640px) { #legend { top:auto; bottom:64px; width:180px; max-height:40vh; } }
+  #help { position:fixed; bottom:12px; right:12px; font-size:12px; color:var(--muted); max-width:calc(100% - 24px); }
+  .lbl { font:12px system-ui,sans-serif; color:#111; background:#ffffffd9; border-radius:6px; padding:2px 6px; white-space:nowrap; text-align:center; pointer-events:none; }
+  .lbl b { display:block; font-size:12px; }
+  .lbl span { color:#555; font-size:11px; }
+  #cross { position:fixed; left:50%; top:50%; width:8px; height:8px; margin:-4px 0 0 -4px; border-radius:50%; border:2px solid #fff8; display:none; }
+</style>
+</head>
+<body>
+<div id="app"></div>
+<div id="cross"></div>
+<div id="ui">
+  <span class="pill" id="title">Floor Plan 3D</span>
+  <button id="bOrbit" aria-pressed="true">Orbit</button>
+  <button id="bWalk" aria-pressed="false">Walk</button>
+  <button id="bPlan" aria-pressed="false">2D plan</button>
+  <button id="bLabels" aria-pressed="true">Labels</button>
+  <button id="bCeil" aria-pressed="false">Ceiling</button>
+  <span id="floors" style="display:contents"></span>
+</div>
+<div id="info" class="pill"></div>
+<div id="legend" class="pill"><h4>Colours <button id="bLegend" aria-expanded="true">hide</button></h4><div class="body" id="legendBody"></div></div>
+<div id="help" class="pill">Orbit: drag / scroll · Walk: click, WASD + mouse, Esc to exit</div>
+
+<script type="importmap">
+{ "imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+} }
+</script>
+<script id="layout-data" type="application/json">__LAYOUT_JSON__</script>
+<script>
+  window.GLB_B64 = "__GLB_B64__";
+  window.PLAN_B64 = "__PLAN_B64__";
+</script>
+<script type="module">
+import * as THREE from "three";
+import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
+import { OrbitControls } from "three/addons/controls/OrbitControls.js";
+import { PointerLockControls } from "three/addons/controls/PointerLockControls.js";
+import { CSS2DRenderer, CSS2DObject } from "three/addons/renderers/CSS2DRenderer.js";
+
+const L = JSON.parse(document.getElementById("layout-data").textContent);
+const s = L.meters_per_px;
+const W = L.width * s, H = L.height * s;
+// storeys: each level is drawn elsewhere on the sheet; offset (px) moves it over the ground floor
+const LEVELS = (L.meta && L.meta.levels && L.meta.levels.length > 1) ? L.meta.levels : [{index: 0, name: "", offset: [0, 0]}];
+const lvOff = i => (LEVELS.find(l => l.index === i) || {offset: [0, 0]}).offset;
+const wallH = (L.meta && L.meta.wall_height_m) || 2.7;
+
+const app = document.getElementById("app");
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.setSize(innerWidth, innerHeight);
+renderer.outputColorSpace = THREE.SRGBColorSpace;
+renderer.shadowMap.enabled = true;
+app.appendChild(renderer.domElement);
+const labelR = new CSS2DRenderer();
+labelR.setSize(innerWidth, innerHeight);
+Object.assign(labelR.domElement.style, { position: "fixed", top: 0, left: 0, pointerEvents: "none" });
+document.body.appendChild(labelR.domElement);
+
+const scene = new THREE.Scene();
+const dark = matchMedia("(prefers-color-scheme: dark)").matches;
+scene.background = new THREE.Color(dark ? 0x16171a : 0xf4f3ef);
+const cam = new THREE.PerspectiveCamera(55, innerWidth / innerHeight, 0.05, 500);
+const STOREY = wallH + 0.2;
+const topY = (Math.max(...LEVELS.map(l => l.index)) + 1) * STOREY;
+let bx0 = Infinity, bx1 = -Infinity, bz0 = Infinity, bz1 = -Infinity;
+for (const r of L.rooms) { const [dx, dy] = lvOff(r.level || 0); for (const p of r.polygon) {
+  bx0 = Math.min(bx0, (p[0] + dx) * s); bx1 = Math.max(bx1, (p[0] + dx) * s); bz0 = Math.min(bz0, (p[1] + dy) * s); bz1 = Math.max(bz1, (p[1] + dy) * s); } }
+if (!isFinite(bx0)) { bx0 = 0; bx1 = W; bz0 = 0; bz1 = H; }
+const center = new THREE.Vector3((bx0 + bx1) / 2, LEVELS.length > 1 ? topY / 3 : 0, (bz0 + bz1) / 2);
+const span = Math.max(bx1 - bx0, bz1 - bz0, topY);
+cam.position.set(center.x + span * 0.55, span * 0.85, center.z + span * 0.75);
+
+scene.add(new THREE.HemisphereLight(0xffffff, 0x9a948a, 1.1));
+const sun = new THREE.DirectionalLight(0xffffff, 1.4);
+sun.position.set(center.x + span, span * 1.5, center.z + span * 0.6);
+sun.target.position.copy(center);
+sun.castShadow = true;
+sun.shadow.mapSize.set(2048, 2048);
+Object.assign(sun.shadow.camera, { left: -span, right: span, top: span, bottom: -span, far: span * 5 });
+scene.add(sun, sun.target);
+
+const ground = new THREE.Mesh(new THREE.PlaneGeometry(span * 4, span * 4),
+  new THREE.MeshStandardMaterial({ color: dark ? 0x202226 : 0xe6e3dc, roughness: 1 }));
+ground.rotation.x = -Math.PI / 2; ground.position.set(center.x, -0.03, center.z); ground.receiveShadow = true;
+scene.add(ground);
+
+// 2D plan overlay
+const planTex = new THREE.TextureLoader().load("data:image/jpeg;base64," + window.PLAN_B64);
+planTex.colorSpace = THREE.SRGBColorSpace;
+const plan = new THREE.Mesh(new THREE.PlaneGeometry(W, H), new THREE.MeshBasicMaterial({ map: planTex, transparent: true, opacity: 0.95 }));
+plan.rotation.x = -Math.PI / 2; plan.position.set(W / 2, 0.012, H / 2); plan.visible = false;
+scene.add(plan);
+
+// model
+const walls = [];
+let model, ceiling = null;
+const bin = Uint8Array.from(atob(window.GLB_B64), c => c.charCodeAt(0));
+new GLTFLoader().parse(bin.buffer, "", g => {
+  model = g.scene;
+  model.traverse(o => {
+    if (!o.isMesh) return;
+    o.castShadow = o.receiveShadow = true;
+    const re = /^(L\d+_)?(walls|railings|door)/;
+    if (re.test(o.name) || re.test(o.parent?.name || "")) walls.push(o);
+  });
+  scene.add(model);
+  // ceiling (toggle) from room polygons
+  ceiling = new THREE.Group(); ceiling.visible = false; scene.add(ceiling);
+  for (const lv of LEVELS) {
+    const [dx, dy] = lv.offset;
+    const shapes = L.rooms.filter(r => r.polygon.length >= 3 && (r.level || 0) === lv.index)
+      .map(r => new THREE.Shape(r.polygon.map(p => new THREE.Vector2((p[0] + dx) * s, (p[1] + dy) * s))));
+    if (!shapes.length) continue;
+    const geo = new THREE.ShapeGeometry(shapes);
+    geo.rotateX(Math.PI / 2);  // shape (x, y) -> world (x, ., y), facing down
+    const c = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ color: 0xfaf2e0, side: THREE.DoubleSide }));
+    c.position.y = lv.index * STOREY + wallH; c.userData.level = lv.index; ceiling.add(c);
+  }
+  applyFloor();
+  buildLegend();
+}, e => { document.getElementById("info").textContent = "Failed to load model: " + e; });
+
+// labels
+const labels = [];
+function polyArea(P) { let a = 0; for (let i = 0; i < P.length; i++) { const [x1, y1] = P[i], [x2, y2] = P[(i + 1) % P.length]; a += x1 * y2 - x2 * y1; } return Math.abs(a) / 2; }
+function rectDims(P) {  // axis-aligned extent is a good proxy for these plans
+  const xs = P.map(p => p[0]), ys = P.map(p => p[1]);
+  return [(Math.max(...xs) - Math.min(...xs)) * s, (Math.max(...ys) - Math.min(...ys)) * s];
+}
+function centroid(P) { let cx = 0, cy = 0, a = 0; for (let i = 0; i < P.length; i++) { const [x1, y1] = P[i], [x2, y2] = P[(i + 1) % P.length]; const f = x1 * y2 - x2 * y1; a += f; cx += (x1 + x2) * f; cy += (y1 + y2) * f; } a *= 0.5; return a ? [cx / (6 * a), cy / (6 * a)] : P[0]; }
+let totalA = 0;
+for (const r of L.rooms) {
+  if (r.polygon.length < 3) continue;
+  const A = polyArea(r.polygon) * s * s; totalA += r.type !== "Outdoor" ? A : 0;
+  const [w, d] = rectDims(r.polygon);
+  const [cx, cy] = centroid(r.polygon);
+  const el = document.createElement("div"); el.className = "lbl";
+  const name = (r.label || (r.type === "Undefined" ? "Room" : r.type) || "Room").slice(0, 28);
+  el.innerHTML = `<b></b><span>${w.toFixed(2)} × ${d.toFixed(2)} m · ${A.toFixed(1)} m²</span>`;
+  el.querySelector("b").textContent = name;
+  const lv = r.level || 0, [dx, dy] = lvOff(lv);
+  const o = new CSS2DObject(el); o.position.set((cx + dx) * s, lv * STOREY + 1.2, (cy + dy) * s); o.userData.level = lv;
+  scene.add(o); labels.push(o);
+}
+// floors: show a storey and everything below it (cutaway), or all
+let floorSel = null;  // null = all
+// component categories (node-name patterns from extrude/mesh.py) for the legend / filters
+const CATS = [
+  ["walls_exterior", "Exterior walls", /^walls_exterior/], ["walls_interior", "Interior walls", /^walls_interior/],
+  ["doors", "Doors", /^door(leaf)?_/], ["windows", "Windows", /^(window|windowframe|sill)_/],
+  ["floors", "Floors (by room type)", /^floor_/], ["furniture", "Fixtures & furniture", /^furniture_/],
+  ["railings", "Railings", /^railings/], ["slab", "Floor slab", /^slab/]];
+const catHidden = new Set();
+function catOf(name) { const n = name.replace(/^L\d+_/, ""); const c = CATS.find(c => c[2].test(n)); return c ? c[0] : null; }
+function applyFloor() {
+  const vis = lv => floorSel === null || lv <= floorSel;
+  if (model) model.traverse(o => {
+    if (!o.name || o === model) return;
+    const m = /^L(\d+)_/.exec(o.name), cat = catOf(o.name);
+    if (!m && !cat) return;
+    o.visible = (m ? vis(+m[1]) : true) && !(cat && catHidden.has(cat));
+  });
+  if (ceiling) ceiling.children.forEach(c => c.visible = vis(c.userData.level) && (floorSel === null || c.userData.level < floorSel));
+  labels.forEach(l => l.visible = labelsOn && (floorSel === null ? true : l.userData.level === floorSel));
+}
+let labelsOn = true;
+function swatch(mat) { return mat && mat.color ? "#" + mat.color.getHexString(THREE.SRGBColorSpace) : "#ccc"; }
+function buildLegend() {
+  const body = document.getElementById("legendBody");
+  const first = {}, floorTypes = {};
+  model.traverse(o => {
+    if (!o.isMesh) return;
+    const name = o.name || (o.parent && o.parent.name) || "", cat = catOf(name) || catOf(o.parent ? o.parent.name : "");
+    if (!cat) return;
+    // for doors show the leaf's colour (more recognisable than the frame)
+    if (!first[cat] || (cat === "doors" && /doorleaf_/.test(name))) first[cat] = o.material;
+    if (cat === "floors") { const t = (name.replace(/^L\d+_/, "").match(/^floor_\d+_(.+?)(_\d+)?$/) || [])[1];
+      if (t && !floorTypes[t]) floorTypes[t] = o.material; }
+  });
+  const item = (key, label, mat, sub) => {
+    const b = document.createElement("button"); b.className = "it" + (sub ? " sub" : "");
+    b.innerHTML = `<span class="sw" style="background:${swatch(mat)}"></span><span></span>`;
+    b.lastChild.textContent = label;
+    if (key) b.onclick = () => { catHidden.has(key) ? catHidden.delete(key) : catHidden.add(key);
+      b.classList.toggle("off", catHidden.has(key)); applyFloor(); };
+    else b.style.cursor = "default";
+    body.appendChild(b);
+  };
+  for (const [key, label] of CATS) {
+    if (!first[key]) continue;
+    item(key, label, first[key]);
+    if (key === "floors") for (const [t, m] of Object.entries(floorTypes))
+      item(null, t.replace(/_/g, " ").replace("Undefined", "Other / hall"), m, true);
+  }
+  item(null, "Ceiling (toggle above)", { color: new THREE.Color(0xfaf2e0) });
+  document.getElementById("bLegend").onclick = e => { const lg = document.getElementById("legend");
+    lg.classList.toggle("collapsed"); e.target.textContent = lg.classList.contains("collapsed") ? "show" : "hide"; };
+}
+if (LEVELS.length > 1) {
+  const box = document.getElementById("floors");
+  const mk = (txt, val) => { const b = document.createElement("button"); b.textContent = txt; b.dataset.val = val === null ? "" : val;
+    b.setAttribute("aria-pressed", String(val === null));
+    b.onclick = () => { floorSel = val; box.querySelectorAll("button").forEach(x => x.setAttribute("aria-pressed", String(x === b))); applyFloor(); };
+    box.appendChild(b); };
+  mk("All floors", null);
+  for (const lv of LEVELS) mk(lv.name || `Floor ${lv.index + 1}`, lv.index);
+}
+const nDoor = L.openings.filter(o => o.type === "door").length, nWin = L.openings.length - nDoor;
+document.getElementById("info").textContent =
+  `${L.rooms.length} rooms · ${nDoor} doors · ${nWin} windows · ${totalA.toFixed(1)} m² interior · ` +
+  `${W.toFixed(1)} × ${H.toFixed(1)} m · scale ${(s * 1000).toFixed(2)} mm/px (${L.scale_source})`;
+document.getElementById("title").textContent = (L.meta && L.meta.method === "baseline") ? "Baseline" : "Floor Plan 3D";
+
+// controls
+const orbit = new OrbitControls(cam, renderer.domElement);
+orbit.target.copy(center); orbit.maxPolarAngle = Math.PI * 0.495; orbit.enableDamping = true; orbit.update();
+const walk = new PointerLockControls(cam, document.body);
+const keys = {};
+addEventListener("keydown", e => keys[e.code] = true);
+addEventListener("keyup", e => keys[e.code] = false);
+let mode = "orbit";
+const btn = id => document.getElementById(id);
+function setPressed(id, v) { btn(id).setAttribute("aria-pressed", String(v)); }
+function setMode(m) {
+  mode = m; setPressed("bOrbit", m === "orbit"); setPressed("bWalk", m === "walk");
+  orbit.enabled = m === "orbit"; document.getElementById("cross").style.display = m === "walk" ? "block" : "none";
+  if (m === "walk") {
+    // start at the centroid of the largest room, eye height 1.6 m
+    const big = [...L.rooms].filter(r => r.polygon.length >= 3 && (r.level || 0) === LEVELS[0].index).sort((a, b) => polyArea(b.polygon) - polyArea(a.polygon))[0];
+    const [cx, cy] = big ? centroid(big.polygon) : [L.width / 2, L.height / 2];
+    cam.position.set(cx * s, 1.6, cy * s); cam.lookAt(cx * s + 1, 1.6, cy * s);
+    walk.lock();
+  } else {
+    walk.unlock(); cam.position.set(center.x + span * 0.55, span * 0.85, center.z + span * 0.75); orbit.target.copy(center); orbit.update();
+  }
+}
+walk.addEventListener("unlock", () => { if (mode === "walk") setMode("orbit"); });
+btn("bOrbit").onclick = () => setMode("orbit");
+btn("bWalk").onclick = () => setMode("walk");
+btn("bPlan").onclick = () => {
+  const on = btn("bPlan").getAttribute("aria-pressed") !== "true"; setPressed("bPlan", on);
+  plan.visible = on;
+  if (model) model.traverse(o => { if (o.isMesh && !/^floor/.test(o.name)) { o.material.transparent = on || o.material.userData.wasT; if (o.material.userData.op === undefined) { o.material.userData.op = o.material.opacity; o.material.userData.wasT = o.material.transparent; } o.material.opacity = on ? 0.25 : o.material.userData.op; } });
+  if (on) { setMode("orbit"); cam.position.set(center.x, span * 1.3, center.z + 0.001); orbit.target.copy(center); orbit.update(); }
+};
+btn("bLabels").onclick = () => { labelsOn = btn("bLabels").getAttribute("aria-pressed") !== "true"; setPressed("bLabels", labelsOn); applyFloor(); };
+btn("bCeil").onclick = () => { const on = btn("bCeil").getAttribute("aria-pressed") !== "true"; setPressed("bCeil", on); if (ceiling) { ceiling.visible = on; applyFloor(); } };
+
+// walk with simple wall collision
+const ray = new THREE.Raycaster();
+const clock = new THREE.Clock();
+function step(dt) {
+  const f = (keys.KeyW || keys.ArrowUp ? 1 : 0) - (keys.KeyS || keys.ArrowDown ? 1 : 0);
+  const r = (keys.KeyD || keys.ArrowRight ? 1 : 0) - (keys.KeyA || keys.ArrowLeft ? 1 : 0);
+  if (!f && !r) return;
+  const dir = new THREE.Vector3(); cam.getWorldDirection(dir); dir.y = 0; dir.normalize();
+  const side = new THREE.Vector3().crossVectors(dir, new THREE.Vector3(0, 1, 0));
+  const mv = dir.multiplyScalar(f).add(side.multiplyScalar(r)).normalize();
+  const dist = 1.6 * dt * (keys.ShiftLeft ? 2 : 1);
+  for (const h of [0.4, 1.2]) {   // knee and chest height, so door frames block but openings don't
+    ray.set(new THREE.Vector3(cam.position.x, h, cam.position.z), mv); ray.far = dist + 0.25;
+    if (ray.intersectObjects(walls, true).length) return;
+  }
+  cam.position.addScaledVector(mv, dist);
+}
+function loop() {
+  const dt = Math.min(clock.getDelta(), 0.05);
+  if (mode === "walk") step(dt); else orbit.update();
+  renderer.render(scene, cam); labelR.render(scene, cam);
+  requestAnimationFrame(loop);
+}
+loop();
+addEventListener("resize", () => {
+  cam.aspect = innerWidth / innerHeight; cam.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight); labelR.setSize(innerWidth, innerHeight);
+});
+</script>
+</body>
+</html>

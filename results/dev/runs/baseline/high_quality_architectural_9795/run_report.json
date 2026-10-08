@@ -1,0 +1,11 @@
+{
+ "fallbacks": [],
+ "timings_s": {
+  "ingest": 0.289,
+  "detect": 3.184,
+  "vectorize": 0.415,
+  "extrude": 0.124,
+  "viewer": 0.058
+ },
+ "total_s": 4.07
+}

@@ -1,0 +1,19 @@
+{
+ "fallbacks": [
+  {
+   "stage": "openings",
+   "msg": "1 opening(s) had no host wall and were dropped"
+  },
+  {
+   "stage": "scale",
+   "msg": "OCR scale support too weak (1.5 from 1 texts); keeping door_width"
+  }
+ ],
+ "timings_s": {
+  "ingest": 3.469,
+  "detect": 9.05,
+  "vectorize": 8.921,
+  "extrude": 0.54
+ },
+ "total_s": 21.98
+}

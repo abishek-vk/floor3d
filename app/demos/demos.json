@@ -1,0 +1,56 @@
+[
+ {
+  "id": "house_dimensioned",
+  "title": "Detached house",
+  "description": "Architectural drawing with dimension strings and room areas: OCR sets the metric scale.",
+  "size": [
+   2642,
+   1514
+  ]
+ },
+ {
+  "id": "apartment_balcony",
+  "title": "Apartment with balcony",
+  "description": "Clean colour plan, glazed balcony, sauna and bathroom fixtures.",
+  "size": [
+   1514,
+   1136
+  ]
+ },
+ {
+  "id": "log_house",
+  "title": "Log house",
+  "description": "Hollow (outlined) walls, corner log joints, overall dimensions.",
+  "size": [
+   1483,
+   1414
+  ]
+ },
+ {
+  "id": "hand_drafted",
+  "title": "Hand-drafted flat",
+  "description": "Scanned pencil drawing with hatched walls and a balcony.",
+  "size": [
+   1314,
+   1065
+  ]
+ },
+ {
+  "id": "grey_walls",
+  "title": "Apartment, grey walls",
+  "description": "Grey-filled walls, kitchen, entry and balcony.",
+  "size": [
+   1068,
+   1126
+  ]
+ },
+ {
+  "id": "two_storey",
+  "title": "Two-storey house",
+  "description": "Both floors on one sheet, terrace and stairs.",
+  "size": [
+   1859,
+   1361
+  ]
+ }
+]

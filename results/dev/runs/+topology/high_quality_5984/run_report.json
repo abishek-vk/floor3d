@@ -1,0 +1,19 @@
+{
+ "fallbacks": [
+  {
+   "stage": "openings",
+   "msg": "4 opening(s) had no host wall and were dropped"
+  },
+  {
+   "stage": "walls",
+   "msg": "pruned 8 wall(s) that bound no room"
+  }
+ ],
+ "timings_s": {
+  "ingest": 1.29,
+  "detect": 3.208,
+  "vectorize": 1.763,
+  "extrude": 0.136
+ },
+ "total_s": 6.397
+}
