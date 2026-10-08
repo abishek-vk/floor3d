@@ -134,6 +134,65 @@ openings without a host wall (dropped), no enclosed rooms (→ learned room comp
 solver failure (→ unrefined layout), empty scene (→ ground plate), viewer build failure.
 Tested on a PDF, a 3°-skewed noisy JPEG scan, a blank page and a 160 px thumbnail.
 
+## Mode B: room video → 3D scene
+
+Write-up: [`WRITEUP_MODE_B.md`](WRITEUP_MODE_B.md) · dev results: [`results_video/dev/results.md`](results_video/dev/results.md). Mode A above is unchanged. Mode B is a separate entry point that shares the `Layout` schema,
+the run context/fallback log and Mode A's extruder.
+
+```bash
+python run_video.py --input room.mp4 --out out/room            # self-calibrates the camera
+python run_video.py --input room.mp4 --out out/room --fov 70   # or --intrinsics fx fy cx cy
+# open out/room/viewer.html
+```
+
+Extra setup (weights are gitignored; the ONNX graphs are exported on first use):
+
+```bash
+git clone --depth 1 https://github.com/DepthAnything/Depth-Anything-V2 third_party/Depth-Anything-V2
+curl -L -o data/weights/depth_anything_v2_metric_hypersim_vits.pth \
+  https://huggingface.co/depth-anything/Depth-Anything-V2-Metric-Hypersim-Small/resolve/main/depth_anything_v2_metric_hypersim_vits.pth
+pip install onnx lpips
+python data/fetch_replica.py --scenes office0 room0 room1 room2 office2 office3   # eval data, ~0.5 GB/scene
+```
+
+| Output | What |
+|---|---|
+| `scene.glb` | observed scan (`observed_scan`) and generated shell (`generated_shell`) as separate nodes; every node carries `extras.provenance` |
+| `scene.obj`, `observed_scan.ply`, `generated_shell.ply` | same geometry; one PLY per provenance class |
+| `provenance.json` | per shell surface (floor, ceiling, each wall): observed / opening / generated fractions |
+| `layout.json`, `layout_model.glb` | the room as a Mode A layout (1 px = 1 cm) and Mode A's extruded model of it, in the same frame as `scene.glb` |
+| `cameras.json` | intrinsics (estimated unless given) and every keyframe pose |
+| `viewer.html` | orbit / walk; "Generated" button cycles shown → highlighted (pink) → hidden |
+
+Pipeline (`video/`, assembled in `video_pipeline.py`):
+
+```
+frames.py    sharpest frame per time bin; optional held-out test views
+sfm.py       RootSIFT, sequential + bag-of-words loop pairs, F-matrix verification, Mendonca-Cipolla
+             focal self-calibration, incremental PnP + triangulation, sparse robust BA (scipy)
+depth.py     Depth Anything V2 metric (ONNX); metric scale from FOV-canonical crops; per-frame
+             smooth scale-field alignment to SfM; multi-view consistency filter
+mvs.py       plane sweep in a narrow band around the monocular prior, NCC; confident stereo
+             re-anchors the monocular depth
+fuse.py      TSDF fusion (torch) + marching cubes
+layout.py    RANSAC planes -> Manhattan frame, floor/ceiling, cell-complex room footprint
+             -> core.layout.Layout; snapping of observed surfaces to the room planes
+complete.py  shell texels labelled OBSERVED / OPENING / GENERATED; only GENERATED is filled
+             (inpainted low frequencies + observed high-frequency patches)
+render.py    CPU rasteriser and image-based rendering (for evaluation)
+export.py    GLB/OBJ/PLY with provenance, viewer
+```
+
+Evaluation on Replica (`python eval/video_eval.py --scenes ... --out results_video/test`, then
+`python eval/video_report.py --dir results_video/test`). `--partial 0.5` uses only the first half
+of each video, which leaves large parts of the room unseen. Thresholds were set on `office0`
+(dev); results are reported on the other scenes.
+
+Mode B deviations: COLMAP and Open3D wheels are blocked by Windows Application Control on the
+dev laptop, so SfM, TSDF fusion and rendering are implemented on numpy/scipy/OpenCV/torch.
+
 ## Licences
 
 CubiCasa5K data and model: CC BY-NC 4.0 (Kalervo et al., 2019). three.js: MIT.
+
+Mode B: Depth Anything V2 Metric-Hypersim Small (Apache-2.0; Yang et al., 2024). Replica (research licence, Straub et al., 2019; NICE-SLAM renderings). LPIPS: BSD-2.
