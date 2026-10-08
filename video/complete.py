@@ -135,8 +135,12 @@ def synthesize(S: Surface, rng: np.random.Generator, fallback_rgb: np.ndarray, p
         return
     # low frequency: inpaint a 4x-downsampled copy, so large holes get smooth trends, not smears
     k = 4
-    small = cv2.resize(np.where(obs[..., None], tex, 0).astype(np.float32), None, fx=1 / k, fy=1 / k, interpolation=cv2.INTER_AREA)
-    wsm = cv2.resize(obs.astype(np.float32), None, fx=1 / k, fy=1 / k, interpolation=cv2.INTER_AREA)
+    # low frequencies are inpainted from typical surface texels only (outliers like a TV excluded)
+    med0 = np.median(tex[obs], 0)
+    obs_lf = obs & (np.linalg.norm(tex - med0, axis=-1) < 40)
+    obs_lf = obs_lf if obs_lf.sum() >= 50 else obs
+    small = cv2.resize(np.where(obs_lf[..., None], tex, 0).astype(np.float32), None, fx=1 / k, fy=1 / k, interpolation=cv2.INTER_AREA)
+    wsm = cv2.resize(obs_lf.astype(np.float32), None, fx=1 / k, fy=1 / k, interpolation=cv2.INTER_AREA)
     small = np.where(wsm[..., None] > 0.05, small / np.maximum(wsm, 1e-6)[..., None], 0)
     hole = (wsm <= 0.05).astype(np.uint8)
     small8 = np.clip(small, 0, 255).astype(np.uint8)
@@ -147,8 +151,11 @@ def synthesize(S: Surface, rng: np.random.Generator, fallback_rgb: np.ndarray, p
     lo_obs = cv2.GaussianBlur(np.where(obs[..., None], tex, low).astype(np.float32), (0, 0), 2.0)
     resid = tex - lo_obs
     rows, cols = lab.shape
+    # only patches that look like the surface itself (not a TV, picture or furniture in front)
+    med = np.median(tex[obs], 0)
     cand = [(r, c) for r in range(0, rows - patch + 1, patch // 2) for c in range(0, cols - patch + 1, patch // 2)
-            if obs[r:r + patch, c:c + patch].all()]
+            if obs[r:r + patch, c:c + patch].all()
+            and np.linalg.norm(tex[r:r + patch, c:c + patch].reshape(-1, 3).mean(0) - med) < 25]
     hf = np.zeros_like(tex)
     if cand:
         for r in range(0, rows, patch):
