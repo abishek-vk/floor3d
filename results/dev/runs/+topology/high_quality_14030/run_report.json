@@ -1,0 +1,15 @@
+{
+ "fallbacks": [
+  {
+   "stage": "walls",
+   "msg": "pruned 1 wall(s) that bound no room"
+  }
+ ],
+ "timings_s": {
+  "ingest": 0.189,
+  "detect": 3.92,
+  "vectorize": 1.146,
+  "extrude": 0.056
+ },
+ "total_s": 5.311
+}

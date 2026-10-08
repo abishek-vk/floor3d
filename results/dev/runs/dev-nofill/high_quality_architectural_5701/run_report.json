@@ -1,0 +1,15 @@
+{
+ "fallbacks": [
+  {
+   "stage": "openings",
+   "msg": "1 opening(s) had no host wall and were dropped"
+  }
+ ],
+ "timings_s": {
+  "ingest": 1.686,
+  "detect": 3.128,
+  "vectorize": 4.506,
+  "extrude": 0.271
+ },
+ "total_s": 9.591
+}
