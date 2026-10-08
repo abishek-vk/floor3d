@@ -112,7 +112,17 @@ def reconstruct(video: str, ctx: RunContext, abl: dict | None = None, cache_dir:
         rf = estimate(mesh, {i: R[i] for i in train}, Cw, vol, ctx)
         snapped = None
         if abl["snap"]:
+            # layout-guided depth refinement, then a second fusion pass (ours)
+            from video.layout import refine_depths_with_shell
+            depths, shell_st = refine_depths_with_shell(depths, mono, rf, K, R, T)
+            log.info("shell refinement: %s", shell_st)
+            vol = integrate(depths, fr.images, K, R, T, ctx, voxel=voxel, bounds=(vol.origin,
+                            vol.origin + np.array(vol.tsdf.shape) * vol.voxel))
+            mesh = extract_mesh(vol)
             mesh, snapped = snap_to_planes(mesh, rf)
+            from video.layout import crop_to_room
+            mesh, cropped = crop_to_room(mesh, rf)
+            log.info("cropped %.1f%% of faces outside the room shell", 100 * cropped)
         L = to_layout(rf)
         ctx.save_img("layout_topdown", _topdown(mesh, rf))
 

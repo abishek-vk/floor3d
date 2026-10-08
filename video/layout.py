@@ -385,3 +385,69 @@ def snap_to_planes(m: trimesh.Trimesh, rf: RoomFrame, tol: float = 0.04, cos_tol
     out = m.copy()
     out.vertices = P @ rf.Rm
     return out, float(moved.mean())
+
+
+def shell_mesh(rf: RoomFrame) -> trimesh.Trimesh:
+    """The room shell (floor, ceiling, walls) as a closed mesh in WORLD coordinates."""
+    from shapely.geometry import Polygon as SPoly
+    ring = rf.polygon
+    v2, f2 = trimesh.creation.triangulate_polygon(SPoly(ring))
+    V, F = [], []
+
+    def add(v, f):
+        F.append(np.asarray(f) + sum(len(x) for x in V))
+        V.append(np.asarray(v, float))
+    add(np.c_[v2[:, 0], np.full(len(v2), rf.floor_y), v2[:, 1]], f2)
+    add(np.c_[v2[:, 0], np.full(len(v2), rf.ceil_y), v2[:, 1]], f2)
+    for k in range(len(ring)):
+        p0, p1 = ring[k], ring[(k + 1) % len(ring)]
+        add([[p0[0], rf.floor_y, p0[1]], [p1[0], rf.floor_y, p1[1]], [p1[0], rf.ceil_y, p1[1]], [p0[0], rf.ceil_y, p0[1]]],
+            [[0, 1, 2], [0, 2, 3]])
+    Vr = np.concatenate(V)
+    return trimesh.Trimesh(Vr @ rf.Rm, np.concatenate(F), process=False)  # room frame -> world
+
+
+def refine_depths_with_shell(depths: dict, mono: dict, rf: RoomFrame, K, R: dict, t: dict,
+                             snap_tol: float = 0.08, fill_tol: float = 0.12) -> tuple[dict, dict]:
+    """Layout-guided depth refinement (ours). The room shell is rendered into every frame:
+    pixels whose depth is within snap_tol (relative) of the shell are put exactly on it (flat,
+    consistent walls/floor/ceiling across views); pixels the consistency filter removed are
+    re-filled from the shell where the frame's scaled monocular depth agrees within fill_tol.
+    Pixels clearly in front of the shell (furniture) or beyond it (openings) are untouched."""
+    from video.render import rasterize
+    sh = shell_mesh(rf)
+    V, F = np.asarray(sh.vertices), np.asarray(sh.faces)
+    out, st = {}, {"snapped": 0.0, "filled": 0.0}
+    n = 0
+    for i, d in depths.items():
+        h, w = d.shape
+        ds, _, _ = rasterize(V, F, K, R[i], t[i], h, w)
+        has = ds > 0
+        valid = d > 0
+        near = has & valid & (np.abs(d - ds) < snap_tol * ds)
+        o = d.copy()
+        o[near] = ds[near]
+        if i in mono and valid.any():
+            k = np.median(d[valid] / np.maximum(mono[i][valid], 1e-3))
+            m = mono[i] * k
+            fill = has & ~valid & (np.abs(m - ds) < fill_tol * ds)
+            o[fill] = ds[fill]
+            st["filled"] += fill.mean()
+        st["snapped"] += near.mean()
+        out[i] = o.astype(np.float32)
+        n += 1
+    return out, {k: round(v / max(n, 1), 4) for k, v in st.items()}
+
+
+def crop_to_room(m: trimesh.Trimesh, rf: RoomFrame, margin: float = 0.25) -> tuple[trimesh.Trimesh, float]:
+    """Drop observed faces well outside the room shell (depth noise behind walls, floaters).
+    Removes observed data only; never adds any."""
+    from matplotlib.path import Path
+    P = m.triangles_center @ rf.Rm.T
+    poly = Polygon(rf.polygon).buffer(margin, join_style=2)
+    inside = Path(np.asarray(poly.exterior.coords)).contains_points(P[:, [0, 2]])
+    inside &= (P[:, 1] > rf.floor_y - margin) & (P[:, 1] < rf.ceil_y + margin)
+    out = m.copy()
+    out.update_faces(inside)
+    out.remove_unreferenced_vertices()
+    return out, float(1 - inside.mean())

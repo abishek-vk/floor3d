@@ -102,8 +102,9 @@ def integrate(depths: dict[int, np.ndarray], images: list[np.ndarray], K, R, t, 
                   col.reshape(shape + (3,)).numpy(), trunc)
 
 
-def extract_mesh(vol: Volume, min_weight: float = 0.5, min_component_faces: int = 200) -> trimesh.Trimesh:
-    """Marching cubes on observed voxels; vertex colours from the colour grid; floaters removed."""
+def extract_mesh(vol: Volume, min_weight: float = 1.0, min_component_faces: int = 500) -> trimesh.Trimesh:
+    """Marching cubes on voxels seen by about two or more views (weight >= 1; one view adds 1/depth);
+    vertex colours from the colour grid; small floating components removed."""
     mask = vol.weight >= min_weight
     if mask.sum() < 8 or vol.tsdf[mask].min() > 0 or vol.tsdf[mask].max() < 0:
         return trimesh.Trimesh()
