@@ -1,0 +1,192 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Room Scan 3D</title>
+<style>
+  :root { --bg:#f4f3ef; --panel:#ffffffee; --ink:#1d1d1f; --muted:#6b6b70; --accent:#2f6fde; --line:#d9d7d0; --gen:#e0409a; }
+  @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --bg:#16171a; --panel:#23252aee; --ink:#ececee; --muted:#9a9ca3; --accent:#6b9cff; --line:#3a3c42; } }
+  :root[data-theme="dark"] { --bg:#16171a; --panel:#23252aee; --ink:#ececee; --muted:#9a9ca3; --accent:#6b9cff; --line:#3a3c42; }
+  html,body { margin:0; height:100%; background:var(--bg); color:var(--ink); font:14px/1.4 system-ui,-apple-system,"Segoe UI",sans-serif; overflow:hidden; }
+  #app { position:fixed; inset:0; }
+  #ui { position:fixed; top:12px; left:12px; right:12px; display:flex; flex-wrap:wrap; gap:8px; align-items:center; pointer-events:none; }
+  #ui > * { pointer-events:auto; }
+  .pill { background:var(--panel); border:1px solid var(--line); border-radius:10px; padding:6px 10px; backdrop-filter:blur(6px); }
+  button { font:inherit; color:var(--ink); background:var(--panel); border:1px solid var(--line); border-radius:8px; padding:6px 12px; cursor:pointer; }
+  button[aria-pressed="true"] { background:var(--accent); color:#fff; border-color:var(--accent); }
+  #info { position:fixed; bottom:12px; left:12px; max-width:min(440px, calc(100% - 24px)); font-size:12px; }
+  #info table { border-collapse:collapse; margin-top:4px; }
+  #info td { padding:1px 8px 1px 0; vertical-align:top; }
+  #info td:first-child { color:var(--muted); }
+  .sw { display:inline-block; width:10px; height:10px; border-radius:3px; margin-right:4px; vertical-align:-1px; }
+  #help { position:fixed; bottom:12px; right:12px; font-size:12px; color:var(--muted); max-width:calc(100% - 24px); }
+  #cross { position:fixed; left:50%; top:50%; width:8px; height:8px; margin:-4px 0 0 -4px; border-radius:50%; border:2px solid #fff8; display:none; }
+  @media (max-width:640px) { #help { display:none; } }
+</style>
+</head>
+<body>
+<div id="app"></div>
+<div id="cross"></div>
+<div id="ui">
+  <span class="pill" id="title">Room scan 3D</span>
+  <button id="bOrbit" aria-pressed="true">Orbit</button>
+  <button id="bWalk" aria-pressed="false">Walk</button>
+  <button id="bGen" aria-pressed="false" title="Generated geometry: shown / highlighted / hidden">Generated: shown</button>
+  <button id="bLayout" aria-pressed="false">Layout</button>
+  <button id="bCams" aria-pressed="false">Cameras</button>
+</div>
+<div id="info" class="pill"></div>
+<div id="help" class="pill">Orbit: drag / scroll · Walk: click, WASD + mouse, Esc to exit</div>
+
+<script type="importmap">
+{ "imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+} }
+</script>
+<script id="info-data" type="application/json">__INFO_JSON__</script>
+<script>window.GLB_B64 = "__GLB_B64__";</script>
+<script type="module">
+import * as THREE from "three";
+import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
+import { OrbitControls } from "three/addons/controls/OrbitControls.js";
+import { PointerLockControls } from "three/addons/controls/PointerLockControls.js";
+
+const I = JSON.parse(document.getElementById("info-data").textContent);
+const app = document.getElementById("app");
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.setSize(innerWidth, innerHeight);
+renderer.outputColorSpace = THREE.SRGBColorSpace;
+app.appendChild(renderer.domElement);
+const scene = new THREE.Scene();
+const dark = matchMedia("(prefers-color-scheme: dark)").matches;
+scene.background = new THREE.Color(dark ? 0x16171a : 0xf4f3ef);
+const cam = new THREE.PerspectiveCamera(60, innerWidth / innerHeight, 0.03, 200);
+
+const poly = (I.room && I.room.polygon) || [[0, 0], [4, 0], [4, 4], [0, 4]];
+const H = (I.room && I.room.height_m) || 2.6;
+const xs = poly.map(p => p[0]), zs = poly.map(p => p[1]);
+const center = new THREE.Vector3((Math.min(...xs) + Math.max(...xs)) / 2, H / 2, (Math.min(...zs) + Math.max(...zs)) / 2);
+const span = Math.max(Math.max(...xs) - Math.min(...xs), Math.max(...zs) - Math.min(...zs), H);
+const home = () => cam.position.set(center.x + span * 0.6, center.y + span * 1.1, center.z + span * 0.8);
+home();
+
+// model: scan colours already contain the scene's lighting, so render unlit
+let gen = [];
+const walls = [];
+const bin = Uint8Array.from(atob(window.GLB_B64), c => c.charCodeAt(0));
+new GLTFLoader().parse(bin.buffer, "", g => {
+  g.scene.traverse(o => {
+    if (!o.isMesh) return;
+    const prov = (o.userData && o.userData.provenance) || (o.parent && o.parent.userData && o.parent.userData.provenance) ||
+                 (/generated/.test(o.name + (o.parent ? o.parent.name : "")) ? "generated" : "observed");
+    o.material = new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.FrontSide });
+    o.userData.prov = prov;
+    if (prov === "generated") gen.push(o);
+    walls.push(o);
+  });
+  scene.add(g.scene);
+  applyGen();
+}, e => { document.getElementById("info").textContent = "Failed to load model: " + e; });
+
+// layout outline (room footprint at floor and ceiling + vertical edges)
+const layout = new THREE.Group(); layout.visible = false; scene.add(layout);
+{
+  const m = new THREE.LineBasicMaterial({ color: 0x2f6fde });
+  for (const y of [0.01, H]) {
+    const pts = poly.concat([poly[0]]).map(p => new THREE.Vector3(p[0], y, p[1]));
+    layout.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts), m));
+  }
+  for (const p of poly) layout.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(p[0], 0, p[1]), new THREE.Vector3(p[0], H, p[1])]), m));
+}
+// camera trajectory
+const cams = new THREE.Group(); cams.visible = false; scene.add(cams);
+if (I.cameras && I.cameras.length) {
+  const pts = I.cameras.map(c => new THREE.Vector3(...c.C));
+  cams.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts), new THREE.LineBasicMaterial({ color: 0xff8a00 })));
+  const fm = new THREE.LineBasicMaterial({ color: 0xff8a00, transparent: true, opacity: 0.6 });
+  I.cameras.forEach((c, k) => { if (k % 3) return;
+    const o = new THREE.Vector3(...c.C), f = new THREE.Vector3(...c.fwd).multiplyScalar(0.18);
+    cams.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints([o, o.clone().add(f)]), fm)); });
+}
+
+// generated geometry: shown -> highlighted -> hidden
+const GEN_STATES = ["shown", "highlighted", "hidden"];
+let genState = 0;
+function applyGen() {
+  for (const o of gen) {
+    o.visible = genState !== 2;
+    o.material.color.set(genState === 1 ? 0xff5cb8 : 0xffffff);
+  }
+  const b = document.getElementById("bGen");
+  b.textContent = "Generated: " + GEN_STATES[genState];
+  b.setAttribute("aria-pressed", String(genState !== 0));
+}
+document.getElementById("bGen").onclick = () => { genState = (genState + 1) % 3; applyGen(); };
+const tog = (id, obj) => { const b = document.getElementById(id); b.onclick = () => { obj.visible = !obj.visible; b.setAttribute("aria-pressed", String(obj.visible)); }; };
+tog("bLayout", layout); tog("bCams", cams);
+
+// info panel
+const pct = v => (100 * (v || 0)).toFixed(0) + "%";
+const P = I.provenance || {};
+const rows = [];
+if (I.room) rows.push(["Room", `${I.room.width_m.toFixed(2)} × ${I.room.depth_m.toFixed(2)} m, height ${H.toFixed(2)} m${I.room.ceiling_observed ? "" : " (ceiling not seen: prior)"}`]);
+if (I.room) rows.push(["Floor area", `${I.room.area_m2.toFixed(1)} m²`]);
+if (I.scale) rows.push(["Metric scale", I.scale]);
+rows.push(["Room shell", `<span class="sw" style="background:#8a8f98"></span>observed ${pct(P.observed)} · ` +
+  `<span class="sw" style="background:var(--gen)"></span>generated ${pct(P.generated)} · openings ${pct(P.opening)}`]);
+if (I.n_frames) rows.push(["Input", `${I.n_frames} keyframes, ${I.n_registered} posed`]);
+const info = document.getElementById("info");
+info.innerHTML = "<b>Reconstruction</b><table></table><div style='color:var(--muted);margin-top:4px'>Generated = never seen in the video; filled from the room layout. Use the button to highlight or hide it.</div>";
+const tb = info.querySelector("table");
+for (const [k, v] of rows) { const tr = document.createElement("tr"); tr.innerHTML = `<td>${k}</td><td>${v}</td>`; tb.appendChild(tr); }
+
+// controls
+const orbit = new OrbitControls(cam, renderer.domElement);
+orbit.target.copy(center); orbit.enableDamping = true; orbit.update();
+const walk = new PointerLockControls(cam, document.body);
+const keys = {};
+addEventListener("keydown", e => keys[e.code] = true);
+addEventListener("keyup", e => keys[e.code] = false);
+let mode = "orbit";
+const btn = id => document.getElementById(id);
+function setMode(m) {
+  mode = m; btn("bOrbit").setAttribute("aria-pressed", String(m === "orbit")); btn("bWalk").setAttribute("aria-pressed", String(m === "walk"));
+  orbit.enabled = m === "orbit"; document.getElementById("cross").style.display = m === "walk" ? "block" : "none";
+  if (m === "walk") {
+    const c0 = I.cameras && I.cameras.length ? I.cameras[Math.floor(I.cameras.length / 2)] : null;
+    if (c0) { cam.position.set(c0.C[0], 1.6, c0.C[2]); cam.lookAt(c0.C[0] + c0.fwd[0], 1.6, c0.C[2] + c0.fwd[2]); }
+    else { cam.position.set(center.x, 1.6, center.z); }
+    walk.lock();
+  } else { walk.unlock(); home(); orbit.target.copy(center); orbit.update(); }
+}
+walk.addEventListener("unlock", () => { if (mode === "walk") setMode("orbit"); });
+btn("bOrbit").onclick = () => setMode("orbit");
+btn("bWalk").onclick = () => setMode("walk");
+const ray = new THREE.Raycaster();
+const clock = new THREE.Clock();
+function step(dt) {
+  const f = (keys.KeyW || keys.ArrowUp ? 1 : 0) - (keys.KeyS || keys.ArrowDown ? 1 : 0);
+  const r = (keys.KeyD || keys.ArrowRight ? 1 : 0) - (keys.KeyA || keys.ArrowLeft ? 1 : 0);
+  if (!f && !r) return;
+  const dir = new THREE.Vector3(); cam.getWorldDirection(dir); dir.y = 0; dir.normalize();
+  const side = new THREE.Vector3().crossVectors(dir, new THREE.Vector3(0, 1, 0));
+  const mv = dir.multiplyScalar(f).add(side.multiplyScalar(r)).normalize();
+  const dist = 1.2 * dt * (keys.ShiftLeft ? 2 : 1);
+  ray.set(new THREE.Vector3(cam.position.x, 1.0, cam.position.z), mv); ray.far = dist + 0.25;
+  if (ray.intersectObjects(walls, true).length) return;
+  cam.position.addScaledVector(mv, dist);
+}
+function loop() {
+  const dt = Math.min(clock.getDelta(), 0.05);
+  if (mode === "walk") step(dt); else orbit.update();
+  renderer.render(scene, cam);
+  requestAnimationFrame(loop);
+}
+loop();
+addEventListener("resize", () => { cam.aspect = innerWidth / innerHeight; cam.updateProjectionMatrix(); renderer.setSize(innerWidth, innerHeight); });
+</script>
+</body>
+</html>

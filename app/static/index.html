@@ -124,8 +124,8 @@
     <div id="pUp" class="hidden">
       <div class="drop" id="drop" tabindex="0" role="button" aria-label="Choose a floor plan file">
         <strong>Drop a floor plan here, or click to browse</strong>
-        <span class="hint">PNG, JPG/JPEG or PDF · up to <span id="maxmb">25</span> MB</span>
-        <input type="file" id="file" class="hidden" accept=".png,.jpg,.jpeg,.pdf,image/png,image/jpeg,application/pdf">
+        <span class="hint">Floor plan: PNG, JPG/JPEG or PDF · up to <span id="maxmb">25</span> MB. Room video: MP4/MOV · up to 300 MB</span>
+        <input type="file" id="file" class="hidden" accept=".png,.jpg,.jpeg,.pdf,.mp4,.mov,.m4v,image/png,image/jpeg,application/pdf,video/mp4,video/quicktime">
       </div>
       <div class="formats">
         <div class="fmt">
@@ -202,7 +202,13 @@
 
 <script>
 const $ = s => document.querySelector(s);
-const STEPS = [["ingest","Reading and cleaning the image"],["detect","Detecting walls, rooms, doors and windows"],
+const VSTEPS = [["frames","Picking sharp keyframes from the video"],["sfm","Recovering camera motion"],
+  ["depth","Metric depth + multi-view stereo"],["fuse","Fusing depth into a 3D surface"],["layout","Finding floor, ceiling and walls"],
+  ["complete","Completing unseen surfaces (marked as generated)"],["export","Writing the 3D scene"],["viewer","Preparing the 3D viewer"]];
+const VCAPTIONS = {keyframes:["Keyframes","Sharpest frame per time window"], depth_example:["Depth","Frame · monocular metric depth · refined + filtered"],
+  layout_topdown:["Room layout","Top-down view of the scan with the fitted room footprint"],
+  shell_provenance:["Shell provenance","Per surface: observed (scan colour) · generated (pink) · opening (green)"]};
+const PLAN_STEPS = [["ingest","Reading and cleaning the image"],["detect","Detecting walls, rooms, doors and windows"],
   ["vectorize","Vectorising walls, building rooms, reading dimensions, solving for scale"],["extrude","Building the 3D model"],["viewer","Preparing the 3D viewer"]];
 const CAPTIONS = {
   input:["Input","The plan as uploaded"], binary:["Binarised ink","Dark strokes separated from paper"],
@@ -216,7 +222,8 @@ const SCALE_TXT = {
   "ocr":["Measured from dimension text on the drawing.", false],
   "door_width":["Estimated from door widths (no usable dimension text was found). Sizes are approximate, typically within 10-15%.", true],
   "default":["No dimension text or doors were found, so a default scale was assumed. Sizes are rough guesses.", true]};
-let choice = null, demos = [];
+let choice = null, demos = [], STEPS = PLAN_STEPS;
+const VIDEO_EXT = [".mp4",".mov",".m4v"], VMAX = 300 * 1024 * 1024;
 
 function esc(s){ return String(s).replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c])); }
 function show(el, on){ el.classList.toggle("hidden", !on); }
@@ -255,7 +262,13 @@ drop.addEventListener("drop", e => { if (e.dataTransfer.files[0]) takeFile(e.dat
 file.onchange = () => { if (file.files[0]) takeFile(file.files[0]); };
 function takeFile(f){
   const ext = (f.name.match(/\.[^.]+$/) || [""])[0].toLowerCase();
-  if (!ACCEPT.includes(ext)) return pickError(`"${f.name}" is not a supported format. Please upload a PNG, JPG/JPEG or PDF file.`);
+  if (VIDEO_EXT.includes(ext)) {
+    if (f.size > VMAX) return pickError(`"${f.name}" is ${(f.size/1048576).toFixed(1)} MB; the video limit is 300 MB.`);
+    if (f.size === 0) return pickError(`"${f.name}" is empty.`);
+    document.querySelectorAll(".demo").forEach(x => x.setAttribute("aria-pressed", false));
+    return choose({kind:"upload", video:true, file:f, name:f.name, thumb:null});
+  }
+  if (!ACCEPT.includes(ext)) return pickError(`"${f.name}" is not a supported format. Please upload a PNG, JPG/JPEG or PDF floor plan, or an MP4/MOV room video.`);
   if (f.size > MAX) return pickError(`"${f.name}" is ${(f.size/1048576).toFixed(1)} MB; the limit is 25 MB.`);
   if (f.size === 0) return pickError(`"${f.name}" is empty.`);
   document.querySelectorAll(".demo").forEach(x => x.setAttribute("aria-pressed", false));
@@ -266,11 +279,13 @@ function pickError(m){ $("#pickErr").textContent = m; show($("#pickErr"), true);
 function choose(c){
   choice = c; show($("#pickErr"), false);
   const p = $("#picked");
-  p.innerHTML = (c.thumb ? `<img src="${c.thumb}" alt="">` : `<div class="pdf">PDF</div>`) +
+  STEPS = c.video ? VSTEPS : PLAN_STEPS;
+  p.innerHTML = (c.thumb ? `<img src="${c.thumb}" alt="">` : `<div class="pdf">${c.video ? "VIDEO" : "PDF"}</div>`) +
     `<div><b>${esc(c.name)}</b><div class="note">${c.kind === "demo" ? "Demo blueprint" :
       `Your file · ${(c.file.size/1048576).toFixed(2)} MB${c.name.toLowerCase().endsWith(".pdf") ? " · first page will be used" : ""}`}</div></div>`;
   show(p, true);
-  $("#go").disabled = false; $("#goNote").textContent = "Takes about 10-30 seconds.";
+  $("#go").disabled = false;
+  $("#goNote").textContent = c.video ? "Room video: takes roughly 5-15 minutes on a laptop CPU." : "Takes about 10-30 seconds.";
 }
 
 // ---- analyse
@@ -321,7 +336,48 @@ document.querySelectorAll(".tabs button").forEach(b => b.onclick = () => {
 function area(P){ let a=0; for(let i=0;i<P.length;i++){const [x1,y1]=P[i],[x2,y2]=P[(i+1)%P.length]; a+=x1*y2-x2*y1;} return Math.abs(a)/2; }
 function ext(P){ const xs=P.map(p=>p[0]), ys=P.map(p=>p[1]); return [Math.max(...xs)-Math.min(...xs), Math.max(...ys)-Math.min(...ys)]; }
 
+async function showVideoResult(j){
+  const r = j.report || {}, room = r.room || {}, P = r.provenance || {};
+  $("#resName").textContent = "· " + JOBS_NAME(j);
+  $("#viewer").src = j.files.viewer; $("#openFull").href = j.files.viewer;
+  const stat = (v, k) => `<div class="stat"><div class="v">${v}</div><div class="k">${k}</div></div>`;
+  const pct = v => (100 * (v || 0)).toFixed(0) + "%";
+  $("#stats").innerHTML = stat(`${(room.width_m||0).toFixed(2)} × ${(room.depth_m||0).toFixed(2)} m`, "room footprint") +
+    stat(`${(room.height_m||0).toFixed(2)} m`, room.ceiling_observed ? "ceiling height" : "ceiling height (not seen: prior)") +
+    stat(`${(room.area_m2||0).toFixed(1)} m²`, "floor area") + stat(pct(P.observed), "of walls/floor/ceiling observed") +
+    stat(pct(P.generated), "generated (never seen)") + stat(`${(r.sfm||{}).n_registered || "?"}`, "keyframes posed");
+  const sc = r.scale || {};
+  $("#scaleWarn").textContent = `Scale: from a metric depth network${sc.canonical_crop ? " on FOV-normalised crops" : ""}. ` +
+    "Expect sizes within roughly 5-10%; generated surfaces are plausible fills, not measurements.";
+  $("#scaleWarn").className = "msg warn"; show($("#scaleWarn"), true);
+  $("#rooms").innerHTML = `<tr><th>Room</th><th class="n">Width (m)</th><th class="n">Length (m)</th><th class="n">Height (m)</th><th class="n">Area (m²)</th></tr>` +
+    `<tr><td>Scanned room</td><td class="n">${(room.width_m||0).toFixed(2)}</td><td class="n">${(room.depth_m||0).toFixed(2)}</td><td class="n">${(room.height_m||0).toFixed(2)}</td><td class="n">${(room.area_m2||0).toFixed(1)}</td></tr>`;
+  const fb = r.fallbacks || [];
+  $("#notes").innerHTML = (fb.length ? `<p>Notes from the analysis:</p><ul>${fb.map(f => `<li>${esc(f.msg)}</li>`).join("")}</ul>` : "") +
+    `<p>Total time ${r.wall_clock_s || "?"} s. In the viewer, the <b>Generated</b> button highlights or hides everything that was not seen in the video.</p>`;
+  $("#gallery").innerHTML = j.debug.map(u => {
+    const key = u.split("/").pop().replace(/^\d+_/, "").replace(/\.png$/, "");
+    const [t, d] = VCAPTIONS[key] || [key, ""];
+    return `<figure><img src="${u}" alt="${esc(t)}" loading="lazy"><figcaption>${esc(t)}<small>${esc(d)}</small></figcaption></figure>`;
+  }).join("");
+  document.querySelectorAll(".gallery img").forEach(im => im.onclick = () => { $("#zoom img").src = im.src; $("#zoom").showModal(); });
+  const dl = (href, name, desc) => `<a href="${href}" download><b>${name}</b><small>${desc}</small></a>`;
+  $("#dl").innerHTML =
+    dl(j.files.glb + "?download=1", "scene.glb", "3D scene; nodes observed_scan / generated_shell (extras.provenance)") +
+    dl(j.files.obj + "?download=1", "scene.obj", "Same scene as OBJ") +
+    dl(j.files.layout + "?download=1", "layout.json", "Room layout in the floor-plan (Mode A) format") +
+    dl(j.files.layout_model + "?download=1", "layout_model.glb", "Clean architectural model of the layout") +
+    dl(j.files.provenance + "?download=1", "provenance.json", "Observed / opening / generated fraction per surface") +
+    dl(j.files.cameras + "?download=1", "cameras.json", "Estimated camera intrinsics and poses") +
+    dl(j.files.viewer, "viewer.html", "Self-contained 3D viewer you can share") +
+    dl(j.files.report + "?download=1", "run_report.json", "Timings and any fallbacks used");
+  show($("#prog"), false); show($("#res"), true);
+  document.querySelector('.tabs button[data-t="v3d"]').click();
+  $("#res").scrollIntoView({behavior:"smooth", block:"start"});
+}
+
 async function showResult(j){
+  if (j.mode === "video") return showVideoResult(j);
   const L = await (await fetch(j.files.layout)).json();
   const s = L.meters_per_px;
   $("#resName").textContent = "· " + JOBS_NAME(j);
