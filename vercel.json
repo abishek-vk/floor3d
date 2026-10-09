@@ -1,0 +1,10 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "buildCommand": "",
+  "installCommand": "",
+  "framework": null,
+  "outputDirectory": "web",
+  "headers": [
+    { "source": "/(.*)\\.glb", "headers": [{ "key": "Content-Type", "value": "model/gltf-binary" }] }
+  ]
+}

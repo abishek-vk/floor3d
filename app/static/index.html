@@ -837,6 +837,9 @@ const SCALE_TXT = {
   "default":["No dimension text or doors were found, so a default scale was assumed. Sizes are rough guesses.", true]};
 let choice = null, demos = [], STEPS = PLAN_STEPS;
 const VIDEO_EXT = [".mp4",".mov",".m4v"], VMAX = 300 * 1024 * 1024;
+// static build (deploy/build_static.py): demos are pre-computed, there is no server to run uploads
+const STATIC = !!window.FP3D_STATIC;
+const API = p => STATIC ? p + ".json" : p;
 
 function esc(s){ return String(s).replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c])); }
 function show(el, on){ el.classList.toggle("hidden", !on); }
@@ -851,7 +854,7 @@ $("#tDemo").onclick = () => setSrc(false);
 $("#tUp").onclick = () => setSrc(true);
 
 // ---- demos
-fetch("/api/demos").then(r => r.json()).then(list => {
+fetch(API("/api/demos")).then(r => r.json()).then(list => {
   demos = list;
   $("#demos").innerHTML = list.map((d, i) => `
     <button class="demo" data-id="${esc(d.id)}" aria-pressed="false">
@@ -911,6 +914,10 @@ $("#go").onclick = async () => {
   show($("#prog"), true);
   const wh = String(Math.min(6, Math.max(2, parseFloat($("#wallH").value) || 2.7)));
   try {
+    if (STATIC) {
+      if (choice.kind !== "demo") throw new Error("This online demo only shows the pre-computed demo plans. To analyse your own plan or video, run the app locally (start_ui.bat).");
+      return poll(choice.id);
+    }
     let r;
     if (choice.kind === "demo") {
       r = await fetch("/api/analyze/demo", {method:"POST", headers:{"Content-Type":"application/json","X-Wall-Height":wh}, body:JSON.stringify({id:choice.id})});
@@ -935,7 +942,7 @@ function fail(m){ $("#runErr").textContent = m; show($("#runErr"), true); show($
 
 async function poll(id){
   try {
-    const j = await (await fetch(`/api/jobs/${id}`)).json();
+    const j = await (await fetch(API(`/api/jobs/${id}`))).json();
     renderSteps(j.stage); $("#elapsed").textContent = `${j.elapsed_s.toFixed(0)} s elapsed`;
     if (j.status === "error") return fail("The analysis failed: " + (j.error || "unknown error"));
     if (j.status !== "done") return setTimeout(() => poll(id), 700);
@@ -1052,7 +1059,7 @@ async function showResult(j){
 }
 function JOBS_NAME(j){ return j.name; }
 $("#zoom").onclick = () => $("#zoom").close();
-fetch("/api/formats").then(r => r.json()).then(f => $("#maxmb").textContent = f.max_mb).catch(() => {});
+fetch(API("/api/formats")).then(r => r.json()).then(f => $("#maxmb").textContent = f.max_mb).catch(() => {});
 </script>
 </body>
 </html>
