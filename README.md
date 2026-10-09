@@ -325,6 +325,39 @@ python eval/handgt.py --dir data/hand --out results/hand    # metric dimension/a
 **Protocol.** All thresholds were tuned on the 10-plan validation split. The 30 test plans are used
 only for reported numbers.
 
+**Results on the 30-plan test split** ([`results/summary_test.md`](results/summary_test.md)):
+
+| Metric | Baseline | Full method |
+|---|---:|---:|
+| Room precision @ IoU 0.5 | 0.53 | 0.88 |
+| Door precision / recall | 0.82 / 0.94 | 0.88 / 0.90 |
+| Window precision / recall | 0.77 / 0.85 | 0.81 / 0.82 |
+| Room IoU | 0.77 | 0.67 |
+| Room recall @ IoU 0.5 | 0.87 | 0.74 |
+| Wall IoU | 0.73 | 0.71 |
+| Time per plan | 6.9 s | 12.6 s |
+
+The full method trades recall for precision. The baseline over-segments into many fragments,
+which raises room IoU and recall but cuts precision. The full method produces fewer, cleaner rooms.
+
+Metric scale was read from the drawing (OCR + solver) on 12 of the 30 plans. The other 18 used the
+door-width fallback. On the whole split, the full method's dimension error (MAPE) is 0.154, against
+0.121 for the baseline, which uses the door-width scale on every plan. The difference comes from
+OCR scale errors on some drawings, so the dimension text clearly helps only when it is read correctly.
+
+**Constraint solver** ([`results/solver_study_test.md`](results/solver_study_test.md); 22 test
+plans with at least 2 annotated rooms, about 8 annotations per plan):
+
+| Condition | Dimension MAPE | Area MAPE | Scale error |
+|---|---:|---:|---:|
+| No annotations (door-width scale) | 11.1% | 19.6% | 7.2% |
+| Annotations used for scale only | 6.5% | 9.9% | 0.6% |
+| Full constraint solver | **6.1%** | **9.5%** | 0.8% |
+| Solver with 20% corrupted annotations | 6.5% | 10.7% | 1.9% |
+
+With 20% of the annotations corrupted, the solver flags 37 of the 40 bad ones. It also wrongly
+flags 25 of the 243 correct ones.
+
 ### Room videos (Replica)
 
 ```bash
@@ -348,8 +381,11 @@ On the development scene `office0`, the full method improves on the baseline as 
 | Chamfer distance at its own metric scale | 55 cm | 9.6 cm |
 | Recall of unseen regions within 10 cm | 0.24 | 0.85 |
 
-These are development-scene numbers; held-out test results are not yet available. See
-[`WRITEUP_MODE_B.md`](WRITEUP_MODE_B.md) for the full table and caveats.
+These are development-scene numbers (the scene thresholds were tuned on); held-out test results
+are not yet available. The full ablation is in [`results_video/dev/results.md`](results_video/dev/results.md).
+Known caveats on this scene:
+- Room-dimension error is 22 cm. All three dimensions shrink by about 5% because the SfM metric scale is 9.7% off.
+- Generated surfaces are on average 15.2 cm from the true surface, with 51% within 10 cm.
 
 ---
 
@@ -381,10 +417,12 @@ These are development-scene numbers; held-out test results are not yet available
 
 ## Further documentation
 
-| Document | Contents |
+| File | Contents |
 |---|---|
-| [`WRITEUP.md`](WRITEUP.md) | Mode A method in detail |
-| [`WRITEUP_MODE_B.md`](WRITEUP_MODE_B.md) | Mode B method, evaluation protocol, results and caveats |
+| [`results/summary_test.md`](results/summary_test.md) | Floor-plan ablation on the 30-plan test split |
+| [`results/solver_study_test.md`](results/solver_study_test.md) | Constraint-solver study, including corrupted annotations |
+| [`results/per_sample_test.csv`](results/per_sample_test.csv) | Per-plan test metrics |
+| [`results_video/dev/results.md`](results_video/dev/results.md) | Room-video ablation on the development scene |
 
 ---
 
