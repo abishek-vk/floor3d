@@ -4,202 +4,776 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Blueprint to 3D</title>
+<meta name="description" content="Turn a floor plan image or a room video into a measured, walkable 3D model.">
+<meta name="theme-color" content="#0a0a0a">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,300..900&family=Instrument+Serif:ital@0;1&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
 <style>
   :root {
-    --bg:#f5f4f0; --surface:#ffffff; --surface-2:#faf9f6; --ink:#1c1c1e; --muted:#66666c; --line:#e1dfd8;
-    --accent:#2f6fde; --accent-ink:#ffffff; --accent-soft:#e6eefc; --ok:#1f8a4c; --warn:#a15c00; --warn-soft:#fff4e0;
-    --err:#c0392b; --err-soft:#fdecea; --radius:12px;
-  }
-  @media (prefers-color-scheme: dark) {
-    :root:not([data-theme="light"]) {
-      --bg:#141518; --surface:#1d1f23; --surface-2:#23262b; --ink:#ececee; --muted:#a0a2a8; --line:#33363c;
-      --accent:#6b9cff; --accent-ink:#0d1117; --accent-soft:#1f2a40; --ok:#4cc38a; --warn:#f0b35a; --warn-soft:#3a2c14;
-      --err:#ff7b6e; --err-soft:#3d1d1a;
-    }
-  }
-  :root[data-theme="dark"] {
-    --bg:#141518; --surface:#1d1f23; --surface-2:#23262b; --ink:#ececee; --muted:#a0a2a8; --line:#33363c;
-    --accent:#6b9cff; --accent-ink:#0d1117; --accent-soft:#1f2a40; --ok:#4cc38a; --warn:#f0b35a; --warn-soft:#3a2c14;
-    --err:#ff7b6e; --err-soft:#3d1d1a;
+    --bg:#0a0a0a; --bg-2:#111110; --bg-3:#181816; --ink:#f2efe9; --muted:#8c877e; --dim:#4a4741;
+    --line:#242320; --line-2:#36342f; --or:#ff5a1f; --or-soft:rgba(255,90,31,.10);
+    --ease:cubic-bezier(.7,0,.2,1); --ease-out:cubic-bezier(.16,1,.3,1);
+    color-scheme:dark;
   }
   * { box-sizing:border-box; }
-  body { margin:0; background:var(--bg); color:var(--ink); font:15px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif; }
-  .wrap { max-width:1180px; margin:0 auto; padding:24px 16px 64px; }
-  header { display:flex; align-items:baseline; gap:12px; flex-wrap:wrap; margin-bottom:20px; }
-  header h1 { font-size:22px; margin:0; letter-spacing:-0.01em; }
-  header p { margin:0; color:var(--muted); }
-  .card { background:var(--surface); border:1px solid var(--line); border-radius:var(--radius); padding:20px; margin-bottom:16px; }
-  .card h2 { font-size:15px; margin:0 0 14px; display:flex; align-items:center; gap:8px; }
-  .num { display:inline-grid; place-items:center; width:22px; height:22px; border-radius:50%; background:var(--accent); color:var(--accent-ink); font-size:12px; font-weight:600; }
-  .seg { display:inline-flex; background:var(--surface-2); border:1px solid var(--line); border-radius:10px; padding:3px; margin-bottom:16px; }
-  .seg button { border:0; background:none; color:var(--muted); font:inherit; padding:7px 16px; border-radius:8px; cursor:pointer; }
-  .seg button[aria-selected="true"] { background:var(--surface); color:var(--ink); box-shadow:0 1px 2px #0002; font-weight:600; }
-  .grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(250px,1fr)); gap:12px; }
-  .demo { border:1px solid var(--line); border-radius:10px; overflow:hidden; background:var(--surface-2); cursor:pointer; text-align:left; padding:0; font:inherit; color:inherit; }
-  .demo:hover { border-color:var(--accent); }
-  .demo[aria-pressed="true"] { outline:2px solid var(--accent); border-color:var(--accent); }
-  .demo .th { aspect-ratio:4/3; background:#fff; display:grid; place-items:center; overflow:hidden; border-bottom:1px solid var(--line); }
-  .demo img { max-width:100%; max-height:100%; object-fit:contain; display:block; }
-  .demo .meta { padding:10px 12px; }
-  .demo b { display:block; font-size:14px; }
-  .demo span { color:var(--muted); font-size:13px; }
-  .drop { border:2px dashed var(--line); border-radius:var(--radius); padding:28px 16px; text-align:center; background:var(--surface-2); cursor:pointer; transition:border-color .15s, background .15s; }
-  .drop.over { border-color:var(--accent); background:var(--accent-soft); }
-  .drop strong { display:block; font-size:16px; margin-bottom:4px; }
-  .drop .hint { color:var(--muted); font-size:13px; }
-  .formats { display:grid; grid-template-columns:repeat(auto-fit,minmax(220px,1fr)); gap:12px; margin-top:14px; }
-  .fmt { background:var(--surface-2); border:1px solid var(--line); border-radius:10px; padding:12px 14px; font-size:13px; }
-  .fmt h3 { margin:0 0 6px; font-size:13px; }
-  .fmt ul { margin:0; padding-left:18px; color:var(--muted); }
-  .chips { display:flex; gap:6px; flex-wrap:wrap; margin-bottom:6px; }
-  .chip { font:600 12px/1 ui-monospace,Consolas,monospace; padding:5px 8px; border-radius:6px; background:var(--accent-soft); color:var(--accent); }
-  .picked { display:flex; gap:14px; align-items:center; margin-top:14px; padding:12px; border:1px solid var(--line); border-radius:10px; background:var(--surface-2); }
-  .picked img { width:96px; height:72px; object-fit:contain; background:#fff; border-radius:6px; border:1px solid var(--line); }
-  .picked .pdf { width:96px; height:72px; display:grid; place-items:center; border-radius:6px; background:var(--err-soft); color:var(--err); font-weight:700; }
-  .row { display:flex; gap:16px; align-items:center; flex-wrap:wrap; }
-  label.field { display:flex; flex-direction:column; gap:4px; font-size:13px; color:var(--muted); }
-  input[type=number] { font:inherit; color:var(--ink); background:var(--surface-2); border:1px solid var(--line); border-radius:8px; padding:7px 10px; width:110px; }
-  .btn { font:inherit; font-weight:600; border:0; border-radius:10px; padding:11px 22px; background:var(--accent); color:var(--accent-ink); cursor:pointer; }
-  .btn:disabled { opacity:.45; cursor:not-allowed; }
-  .btn.ghost { background:var(--surface-2); color:var(--ink); border:1px solid var(--line); font-weight:500; text-decoration:none; display:inline-block; }
-  .msg { margin-top:12px; padding:10px 12px; border-radius:8px; font-size:14px; }
-  .msg.err { background:var(--err-soft); color:var(--err); }
-  .msg.warn { background:var(--warn-soft); color:var(--warn); }
-  .steps { list-style:none; padding:0; margin:0; display:grid; gap:8px; }
-  .steps li { display:flex; gap:10px; align-items:center; color:var(--muted); }
-  .steps li .dot { width:18px; height:18px; border-radius:50%; border:2px solid var(--line); flex:none; }
-  .steps li.done { color:var(--ink); }
-  .steps li.done .dot { background:var(--ok); border-color:var(--ok); }
-  .steps li.now { color:var(--ink); font-weight:600; }
-  .steps li.now .dot { border-color:var(--accent); border-top-color:transparent; animation:spin .8s linear infinite; }
-  @keyframes spin { to { transform:rotate(360deg); } }
-  .tabs { display:flex; gap:4px; border-bottom:1px solid var(--line); margin:-4px 0 16px; overflow-x:auto; }
-  .tabs button { font:inherit; border:0; background:none; color:var(--muted); padding:10px 14px; cursor:pointer; border-bottom:2px solid transparent; white-space:nowrap; }
-  .tabs button[aria-selected="true"] { color:var(--ink); border-bottom-color:var(--accent); font-weight:600; }
-  iframe { width:100%; height:min(72vh,760px); border:1px solid var(--line); border-radius:10px; background:var(--surface-2); display:block; }
-  .stats { display:grid; grid-template-columns:repeat(auto-fit,minmax(140px,1fr)); gap:10px; margin-bottom:16px; }
-  .stat { background:var(--surface-2); border:1px solid var(--line); border-radius:10px; padding:10px 12px; }
-  .stat .v { font-size:22px; font-weight:650; font-variant-numeric:tabular-nums; }
-  .stat .k { font-size:12px; color:var(--muted); }
-  table { width:100%; border-collapse:collapse; font-size:14px; }
-  th, td { text-align:left; padding:8px 10px; border-bottom:1px solid var(--line); }
-  th { color:var(--muted); font-weight:500; font-size:12px; text-transform:uppercase; letter-spacing:.04em; }
-  td.n { text-align:right; font-variant-numeric:tabular-nums; }
-  .tablewrap { overflow-x:auto; }
-  .gallery { display:grid; grid-template-columns:repeat(auto-fill,minmax(260px,1fr)); gap:12px; }
-  .gallery figure { margin:0; border:1px solid var(--line); border-radius:10px; overflow:hidden; background:var(--surface-2); }
-  .gallery img { width:100%; aspect-ratio:4/3; object-fit:contain; background:#fff; display:block; cursor:zoom-in; }
-  .gallery figcaption { padding:8px 10px; font-size:13px; }
-  .gallery figcaption small { display:block; color:var(--muted); }
-  .dl { display:grid; grid-template-columns:repeat(auto-fit,minmax(240px,1fr)); gap:10px; }
-  .dl a { display:block; padding:12px 14px; border:1px solid var(--line); border-radius:10px; text-decoration:none; color:var(--ink); background:var(--surface-2); }
-  .dl a:hover { border-color:var(--accent); }
-  .dl a small { display:block; color:var(--muted); }
-  .note { font-size:13px; color:var(--muted); }
+  html { scroll-behavior:smooth; }
+  section[id], header[id] { scroll-margin-top:72px; }
+  #process { scroll-margin-top:0; }
+  body { margin:0; background:var(--bg); color:var(--ink); font:400 16px/1.55 Archivo,system-ui,sans-serif; overflow-x:hidden; -webkit-font-smoothing:antialiased; }
+  body.loading { overflow:hidden; }
+  ::selection { background:var(--or); color:#000; }
+  a { color:inherit; }
+  code, .mono { font-family:"IBM Plex Mono",ui-monospace,Consolas,monospace; font-size:.9em; }
+  .serif { font-family:"Instrument Serif",serif; font-style:italic; font-weight:400; letter-spacing:-.01em; font-stretch:100%; text-transform:none; }
   .hidden { display:none !important; }
-  dialog { border:0; border-radius:12px; padding:0; max-width:95vw; max-height:92vh; background:var(--surface); }
+  .wrap { max-width:1440px; margin:0 auto; padding:0 40px; }
+  @media (max-width:700px) { .wrap { padding:0 16px; } }
+  .lbl { font:500 11px/1.2 "IBM Plex Mono",monospace; letter-spacing:.12em; text-transform:uppercase; color:var(--muted); }
+
+  /* grain */
+  .grain { position:fixed; inset:-50%; z-index:200; pointer-events:none; opacity:.06;
+    background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+    animation:grain 1s steps(6) infinite; }
+  @keyframes grain { 0%{transform:translate(0,0)} 20%{transform:translate(-4%,3%)} 40%{transform:translate(3%,-5%)} 60%{transform:translate(-6%,-2%)} 80%{transform:translate(5%,4%)} }
+
+  /* preloader */
+  .pre { position:fixed; inset:0; z-index:400; background:var(--bg); display:flex; flex-direction:column; justify-content:space-between; padding:32px 40px; transition:transform 1.1s var(--ease); }
+  .pre.done { transform:translateY(-100%); }
+  .pre .count { font-weight:800; font-stretch:125%; font-size:clamp(72px,14vw,200px); line-height:.8; letter-spacing:-.05em; font-variant-numeric:tabular-nums; }
+  .pre .count span { color:var(--or); }
+  .pre .bar { height:2px; background:var(--line); position:relative; overflow:hidden; margin-top:20px; }
+  .pre .bar i { position:absolute; inset:0; background:var(--or); transform-origin:left; transform:scaleX(0); }
+  .pre .row { display:flex; justify-content:space-between; gap:20px; }
+  @media (max-width:700px) { .pre { padding:20px 16px; } }
+
+  /* nav */
+  nav.top { position:fixed; inset:0 0 auto 0; z-index:100; padding:22px 40px; display:grid; grid-template-columns:1fr auto 1fr; align-items:center; mix-blend-mode:difference; color:#fff; }
+  @media (max-width:700px) { nav.top { padding:16px; grid-template-columns:1fr auto; } nav.top .links { display:none; } }
+  .brand { font-weight:800; font-stretch:125%; font-size:18px; letter-spacing:-.03em; text-decoration:none; display:flex; align-items:center; gap:10px; }
+  .brand .sq { width:14px; height:14px; background:#fff; display:inline-block; }
+  nav.top .links { display:flex; gap:34px; }
+  nav.top .links a { text-decoration:none; font:500 12px/1.3 "IBM Plex Mono",monospace; letter-spacing:.1em; text-transform:uppercase; position:relative; overflow:hidden; display:inline-block; height:1.3em; }
+  .roll { display:inline-block; position:relative; transition:transform .5s var(--ease); }
+  .roll::after { content:attr(data-t); position:absolute; left:0; top:100%; }
+  a:hover > .roll { transform:translateY(-100%); }
+  nav.top .links sup { opacity:.5; margin-right:4px; font-size:9px; }
+  nav.top .right { justify-self:end; display:flex; align-items:center; gap:20px; font:500 12px "IBM Plex Mono",monospace; letter-spacing:.08em; text-transform:uppercase; }
+  .live { display:flex; align-items:center; gap:8px; }
+  .live i { width:7px; height:7px; border-radius:50%; background:#fff; animation:blink 1.6s infinite; }
+  @keyframes blink { 50% { opacity:.2; } }
+  @media (max-width:1000px) { .live { display:none; } }
+
+  /* buttons */
+  .btn { --h:52px; position:relative; display:inline-flex; align-items:center; gap:14px; height:var(--h); padding:0 26px; border:1px solid var(--or); background:var(--or); color:#0a0a0a;
+    font:600 13px "IBM Plex Mono",monospace; letter-spacing:.08em; text-transform:uppercase; text-decoration:none; cursor:pointer; overflow:hidden; isolation:isolate; border-radius:0; transition:transform .3s var(--ease-out), color .4s; }
+  .btn::before { content:""; position:absolute; inset:0; background:var(--ink); transform:translateY(101%); transition:transform .5s var(--ease); z-index:-1; }
+  .btn:hover:not(:disabled)::before { transform:translateY(0); }
+  .btn .arr { width:18px; height:18px; transition:transform .5s var(--ease); }
+  .btn:hover .arr { transform:rotate(-45deg); }
+  .btn:disabled { opacity:.3; cursor:not-allowed; }
+  .btn.line { background:transparent; color:#fff; border-color:#fff; }
+  .btn.line::before { background:#fff; }
+  .btn.line:hover { color:#000; }
+  .btn.sm { --h:40px; padding:0 18px; font-size:11px; }
+
+  /* hero */
+  .hero { position:relative; height:100vh; height:100svh; min-height:640px; overflow:hidden; }
+  #hero3d { position:absolute; inset:0; width:100%; height:100%; }
+  .hero .vignette { position:absolute; inset:0; pointer-events:none; background:radial-gradient(ellipse at 62% 45%,transparent 25%,var(--bg) 85%), linear-gradient(transparent 55%,var(--bg)); }
+  .hero-inner { position:relative; z-index:2; height:100%; display:flex; flex-direction:column; justify-content:flex-end; padding-bottom:40px; pointer-events:none; }
+  .hero-inner a { pointer-events:auto; }
+  .mega { font-weight:900; font-stretch:125%; text-transform:uppercase; font-size:clamp(38px,6.6vw,104px); line-height:.9; letter-spacing:-.045em; margin:0; }
+  .mega .serif { font-size:1.08em; letter-spacing:-.03em; color:var(--or); }
+  .line-mask { display:block; overflow:hidden; padding-bottom:.04em; }
+  .line-mask > span { display:inline-block; transform:translateY(110%); transition:transform 1.3s var(--ease); }
+  .in .line-mask > span { transform:none; }
+  .line-mask:nth-child(2) > span { transition-delay:.08s; } .line-mask:nth-child(3) > span { transition-delay:.16s; }
+  .hero-foot { display:grid; grid-template-columns:1.2fr 1fr 1fr auto; gap:40px; align-items:end; margin-top:40px; padding-top:22px; border-top:1px solid var(--line-2); }
+  @media (max-width:1000px) { .hero-foot { grid-template-columns:1fr auto; gap:24px; } .hero-foot .specs { display:none; } }
+  @media (max-width:560px) { .hero-foot { grid-template-columns:1fr; } }
+  .hero-foot p { margin:0; color:var(--muted); max-width:420px; font-size:15px; }
+  .hero-foot p b { color:var(--ink); font-weight:500; }
+  .specs { display:grid; gap:6px; }
+  .specs div { display:flex; justify-content:space-between; gap:16px; border-bottom:1px dashed var(--line-2); padding-bottom:6px; font:400 12px "IBM Plex Mono",monospace; color:var(--muted); }
+  .specs div b { color:var(--ink); font-weight:500; }
+  .fade-up { opacity:0; transform:translateY(24px); transition:opacity 1s var(--ease-out) .5s, transform 1s var(--ease-out) .5s; }
+  .in .fade-up { opacity:1; transform:none; }
+  .hud { position:absolute; z-index:2; font:400 11px/1.7 "IBM Plex Mono",monospace; color:var(--muted); letter-spacing:.06em; pointer-events:none; }
+  .hud.tl { top:96px; left:40px; } .hud.tr { top:96px; right:40px; text-align:right; }
+  .hud b { color:var(--or); font-weight:500; }
+  @media (max-width:700px) { .hud { display:none; } }
+  .cross { position:absolute; width:14px; height:14px; z-index:2; pointer-events:none; }
+  .cross::before, .cross::after { content:""; position:absolute; background:var(--or); }
+  .cross::before { left:6px; top:0; width:2px; height:14px; } .cross::after { top:6px; left:0; width:14px; height:2px; }
+
+  /* ticker */
+  .ticker { padding:34px 0; border-block:1px solid var(--line); overflow:hidden; white-space:nowrap; }
+  .ticker .track { display:inline-flex; will-change:transform; }
+  .ticker span { font-weight:900; font-stretch:125%; text-transform:uppercase; font-size:clamp(40px,5.6vw,84px); line-height:1; letter-spacing:-.04em; padding-right:.4em;
+    color:transparent; -webkit-text-stroke:1px #55514a; }
+  .ticker span:nth-child(3n+1) { color:var(--ink); -webkit-text-stroke:0; }
+  .ticker span.star { color:var(--or); -webkit-text-stroke:0; font-family:"Instrument Serif",serif; font-weight:400; }
+
+  /* sections */
+  section.block { padding:128px 0; position:relative; }
+  @media (max-width:700px) { section.block { padding:96px 0; } }
+  .sec-head { display:grid; grid-template-columns:1fr 2fr; gap:40px; margin-bottom:64px; align-items:start; }
+  @media (max-width:900px) { .sec-head { grid-template-columns:1fr; gap:16px; margin-bottom:48px; } }
+  .sec-head .idx { display:flex; gap:14px; align-items:center; }
+  .sec-head .idx::before { content:""; width:10px; height:10px; background:var(--or); }
+  h2.big { font-weight:800; font-stretch:112%; font-size:clamp(32px,4vw,64px); line-height:.95; letter-spacing:-.045em; margin:0; text-transform:uppercase; }
+  h2.big .serif { color:var(--or); font-size:1.1em; }
+
+  .manifesto { font-weight:500; font-size:clamp(24px,2.8vw,42px); line-height:1.18; letter-spacing:-.03em; margin:0; max-width:1240px; }
+  .manifesto .w { color:var(--dim); transition:color .4s; }
+  .manifesto .w.on { color:var(--ink); }
+  .manifesto .w.serif.on { color:var(--or); }
+  .counters { display:grid; grid-template-columns:repeat(4,1fr); margin-top:88px; border-top:1px solid var(--line); }
+  @media (max-width:800px) { .counters { grid-template-columns:repeat(2,1fr); } }
+  .counters > div { padding:28px 24px 0 0; }
+  .counters > div + div { border-left:1px solid var(--line); padding-left:24px; }
+  @media (max-width:800px) { .counters > div:nth-child(3) { border-left:0; padding-left:0; } }
+  .counters b { display:block; font-weight:800; font-stretch:125%; font-size:clamp(36px,3.6vw,56px); line-height:1; letter-spacing:-.05em; margin:18px 0 10px; font-variant-numeric:tabular-nums; }
+  .counters b small { font-size:.4em; color:var(--or); margin-left:4px; letter-spacing:0; }
+  .counters p { margin:0; color:var(--muted); font-size:14px; max-width:220px; }
+
+  /* horizontal process */
+  .hscroll { position:relative; height:500vh; }
+  .hscroll .sticky { position:sticky; top:0; height:100vh; overflow:hidden; display:flex; flex-direction:column; justify-content:center; }
+  .hscroll .top-row { display:flex; justify-content:space-between; align-items:end; padding:0 40px; margin-bottom:40px; gap:20px; }
+  .hscroll .prog { flex:1; max-width:340px; height:2px; background:var(--line); position:relative; }
+  .hscroll .prog i { position:absolute; inset:0; background:var(--or); transform-origin:left; transform:scaleX(0); }
+  .htrack { display:flex; gap:24px; padding:0 40px; will-change:transform; }
+  .panel { flex:none; width:min(560px,82vw); height:min(58vh,520px); border:1px solid var(--line-2); background:var(--bg-2); padding:32px; display:flex; flex-direction:column; position:relative; overflow:hidden; }
+  .panel .n { font-weight:900; font-stretch:125%; font-size:96px; line-height:.8; letter-spacing:-.06em; color:transparent; -webkit-text-stroke:1px var(--line-2); position:absolute; right:24px; top:24px; }
+  .panel h3 { font-weight:800; font-stretch:112%; text-transform:uppercase; font-size:32px; letter-spacing:-.04em; margin:auto 0 12px; line-height:.95; }
+  .panel p { color:var(--muted); margin:0; max-width:400px; }
+  .panel .ill { position:absolute; left:32px; top:32px; width:52%; height:46%; }
+  .panel.intro { background:var(--or); color:#0a0a0a; border-color:var(--or); }
+  .panel.intro h3 { font-size:clamp(32px,3.2vw,48px); }
+  .panel.intro p { color:#0a0a0acc; }
+  .panel .dash { stroke-dasharray:400; stroke-dashoffset:400; transition:stroke-dashoffset 2.2s var(--ease); }
+  .panel.on .dash { stroke-dashoffset:0; }
+  @media (max-width:700px) { .hscroll .top-row, .htrack { padding:0 16px; } .panel { padding:22px; } .panel h3 { font-size:30px; } .panel .n { font-size:80px; } .panel .ill { left:22px; top:22px; } }
+
+  /* modes */
+  .modes { display:grid; grid-template-columns:1fr 1fr; border-top:1px solid var(--line-2); border-bottom:1px solid var(--line-2); }
+  @media (max-width:900px) { .modes { grid-template-columns:1fr; } }
+  .mode { position:relative; padding:48px 40px 40px; min-height:560px; display:flex; flex-direction:column; overflow:hidden; isolation:isolate; text-decoration:none; color:inherit; transition:color .4s; }
+  .mode + .mode { border-left:1px solid var(--line-2); }
+  @media (max-width:900px) { .mode + .mode { border-left:0; border-top:1px solid var(--line-2); } .mode { padding:40px 16px; min-height:0; } }
+  .mode::before { content:""; position:absolute; inset:0; background:var(--or); clip-path:circle(0% at var(--x,50%) var(--y,50%)); transition:clip-path .9s var(--ease); z-index:-1; }
+  .mode:hover::before { clip-path:circle(150% at var(--x,50%) var(--y,50%)); }
+  .mode:hover, .mode:hover .lbl, .mode:hover li, .mode:hover p, .mode:hover h3 .serif { color:#0a0a0a; }
+  .mode:hover .vis, .mode:hover li { border-color:#0a0a0a55; }
+  .mode:hover .vis svg { stroke:#0a0a0a; }
+  .mode:hover .scanline { background:#0a0a0a; box-shadow:none; }
+  .mode h3 { font-weight:800; font-stretch:118%; text-transform:uppercase; font-size:clamp(34px,3.4vw,54px); line-height:.92; letter-spacing:-.045em; margin:28px 0 20px; }
+  .mode h3 .serif { color:var(--or); transition:color .4s; }
+  .mode p { color:var(--muted); max-width:440px; margin:0 0 28px; transition:color .4s; }
+  .mode ul { list-style:none; padding:0; margin:0 0 40px; }
+  .mode li { display:flex; justify-content:space-between; gap:20px; padding:12px 0; border-bottom:1px solid var(--line-2); font:400 13px "IBM Plex Mono",monospace; color:var(--muted); transition:color .4s; }
+  .mode li b { color:inherit; font-weight:500; }
+  .mode .vis { margin-top:auto; height:180px; border:1px solid var(--line-2); position:relative; overflow:hidden; transition:border-color .4s; }
+  .mode .vis svg { position:absolute; inset:0; width:100%; height:100%; transition:stroke .4s; }
+  .draw { stroke-dasharray:700; stroke-dashoffset:700; animation:draw 5s var(--ease) infinite alternate; }
+  @keyframes draw { 60%,100% { stroke-dashoffset:0; } }
+  .scanline { position:absolute; top:0; bottom:0; width:1px; background:var(--or); box-shadow:0 0 24px 6px var(--or-soft); animation:scan 3.6s var(--ease) infinite alternate; }
+  @keyframes scan { from { left:6%; } to { left:94%; } }
+
+  /* tech index */
+  .tech { border-top:1px solid var(--line-2); }
+  .trow { display:grid; grid-template-columns:90px 1.1fr 1.4fr 40px; gap:28px; align-items:center; padding:30px 0; border-bottom:1px solid var(--line-2); position:relative; isolation:isolate; }
+  .trow::before { content:""; position:absolute; inset:0 -40px; background:var(--bg-3); transform:scaleY(0); transform-origin:bottom; transition:transform .5s var(--ease); z-index:-1; }
+  .trow:hover::before { transform:scaleY(1); }
+  .trow h3 { margin:0; font-weight:700; font-stretch:112%; font-size:clamp(22px,2vw,30px); letter-spacing:-.03em; text-transform:uppercase; line-height:1; transition:transform .5s var(--ease), color .3s; }
+  .trow:hover h3 { transform:translateX(16px); color:var(--or); }
+  .trow p { margin:0; color:var(--muted); font-size:15px; }
+  .trow .pl { width:34px; height:34px; border:1px solid var(--line-2); display:grid; place-items:center; transition:.4s var(--ease); }
+  .trow:hover .pl { background:var(--or); border-color:var(--or); color:#0a0a0a; transform:rotate(90deg); }
+  .trow .pl svg { width:14px; height:14px; }
+  @media (max-width:800px) { .trow { grid-template-columns:50px 1fr; } .trow > :nth-child(3) { grid-column:2; } .trow .pl { display:none; } .trow::before { inset:0 -16px; } }
+  .eq { font:400 13px/1.8 "IBM Plex Mono",monospace; color:var(--muted); margin-top:12px; white-space:pre; overflow-x:auto; }
+  .eq b { color:var(--or); font-weight:500; }
+
+  /* studio (light inverted block) */
+  #studio { background:var(--ink); color:#0a0a0a; --s-line:#d9d4ca; --s-muted:#6d685f; --s-bg:#e9e5dc; }
+  #studio .lbl { color:var(--s-muted); }
+  .studio { display:grid; grid-template-columns:260px 1fr; border-top:2px solid #0a0a0a; }
+  @media (max-width:1000px) { .studio { grid-template-columns:1fr; } }
+  .rail { padding:28px 28px 28px 0; border-right:1px solid var(--s-line); position:sticky; top:96px; align-self:start; }
+  @media (max-width:1000px) { .rail { position:static; border-right:0; border-bottom:1px solid var(--s-line); padding:20px 0; display:flex; gap:24px; flex-wrap:wrap; } }
+  .rail .st { display:flex; gap:14px; align-items:baseline; padding:14px 0; color:var(--s-muted); font:500 12px "IBM Plex Mono",monospace; letter-spacing:.08em; text-transform:uppercase; transition:color .3s; }
+  .rail .st b { font:800 28px Archivo,sans-serif; font-stretch:125%; letter-spacing:-.04em; transition:color .3s; }
+  .rail .st.on { color:#0a0a0a; } .rail .st.on b { color:var(--or); }
+  .rail .note { margin-top:20px; }
+  @media (max-width:1000px) { .rail .note { display:none; } .rail .st { padding:0; } }
+  .panes { padding:0 0 0 40px; min-width:0; }
+  @media (max-width:1000px) { .panes { padding:0; } }
+  .card { padding:32px 0; border-bottom:1px solid var(--s-line); }
+  .card h2 { font:600 13px "IBM Plex Mono",monospace; letter-spacing:.12em; text-transform:uppercase; margin:0 0 24px; display:flex; align-items:center; gap:14px; }
+  .num { display:inline-grid; place-items:center; width:28px; height:28px; background:#0a0a0a; color:var(--ink); font-size:12px; transition:background .3s, color .3s; }
+  .card.active .num { background:var(--or); color:#0a0a0a; }
+  .seg { display:inline-flex; border:1px solid #0a0a0a; margin-bottom:24px; }
+  .seg button { border:0; background:none; color:#0a0a0a; font:500 12px "IBM Plex Mono",monospace; letter-spacing:.08em; text-transform:uppercase; padding:12px 20px; cursor:pointer; transition:background .3s, color .3s; }
+  .seg button[aria-selected="true"] { background:#0a0a0a; color:var(--ink); }
+  .grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(230px,1fr)); gap:1px; background:var(--s-line); border:1px solid var(--s-line); }
+  .demo { position:relative; border:0; background:var(--ink); cursor:pointer; text-align:left; padding:0; font:inherit; color:inherit; overflow:hidden; transition:background .3s, color .3s; }
+  .demo .th { aspect-ratio:4/3; background:#fff; display:grid; place-items:center; overflow:hidden; position:relative; }
+  .demo .th img { max-width:92%; max-height:92%; object-fit:contain; display:block; transition:transform .8s var(--ease), filter .5s; filter:grayscale(1) contrast(1.1); }
+  .demo:hover .th img, .demo[aria-pressed="true"] .th img { transform:scale(1.06); filter:none; }
+  .demo .meta { padding:14px 16px 18px; }
+  .demo .meta i { font:500 10px "IBM Plex Mono",monospace; letter-spacing:.1em; color:var(--s-muted); font-style:normal; }
+  .demo b { display:block; font-weight:700; font-stretch:110%; font-size:17px; text-transform:uppercase; letter-spacing:-.02em; margin:4px 0; }
+  .demo span { color:var(--s-muted); font-size:13px; line-height:1.4; }
+  .demo[aria-pressed="true"] { background:#0a0a0a; color:var(--ink); }
+  .demo[aria-pressed="true"] span, .demo[aria-pressed="true"] .meta i { color:#a29d93; }
+  .demo[aria-pressed="true"] .meta i::after { content:" · SELECTED"; color:var(--or); }
+  .drop { border:1px dashed #0a0a0a; padding:64px 20px; text-align:center; cursor:pointer; transition:background .3s; }
+  .drop:hover, .drop.over { background:var(--s-bg); }
+  .drop.over { border-style:solid; border-color:var(--or); }
+  .drop strong { display:block; font-weight:800; font-stretch:118%; font-size:clamp(20px,2.2vw,28px); letter-spacing:-.03em; text-transform:uppercase; margin-bottom:10px; }
+  .drop strong .serif { color:var(--or); }
+  .drop .hint { color:var(--s-muted); font:400 12px "IBM Plex Mono",monospace; }
+  .formats { display:grid; grid-template-columns:repeat(auto-fit,minmax(220px,1fr)); margin-top:24px; border-top:1px solid var(--s-line); }
+  .fmt { padding:18px 20px 0 0; font-size:13px; }
+  .fmt h3 { margin:0 0 10px; font:500 11px "IBM Plex Mono",monospace; letter-spacing:.1em; text-transform:uppercase; }
+  .fmt ul { margin:0; padding-left:16px; color:var(--s-muted); }
+  .chips { display:flex; gap:4px; flex-wrap:wrap; margin-bottom:10px; }
+  .chip { font:500 11px/1 "IBM Plex Mono",monospace; padding:5px 7px; background:#0a0a0a; color:var(--ink); }
+  .picked { display:flex; gap:16px; align-items:center; margin-top:20px; padding:12px; background:#0a0a0a; color:var(--ink); animation:wipe .7s var(--ease-out); }
+  @keyframes wipe { from { clip-path:inset(0 100% 0 0); } to { clip-path:inset(0 0 0 0); } }
+  .picked img { width:96px; height:72px; object-fit:contain; background:#fff; }
+  .picked .pdf { width:96px; height:72px; display:grid; place-items:center; background:var(--or); color:#0a0a0a; font:600 12px "IBM Plex Mono",monospace; letter-spacing:.1em; }
+  .picked .note { color:#a29d93; }
+  .row { display:flex; gap:20px; align-items:flex-end; flex-wrap:wrap; }
+  label.field { display:flex; flex-direction:column; gap:8px; font:500 11px "IBM Plex Mono",monospace; letter-spacing:.1em; text-transform:uppercase; color:var(--s-muted); }
+  input[type=number] { font:700 22px Archivo,sans-serif; color:#0a0a0a; background:transparent; border:0; border-bottom:2px solid #0a0a0a; padding:6px 0; width:130px; outline:none; border-radius:0; }
+  input[type=number]:focus { border-color:var(--or); }
+  #studio .btn:hover:not(:disabled) { color:var(--ink); }
+  #studio .btn::before { background:#0a0a0a; }
+  .msg { margin-top:16px; padding:14px 16px; font-size:14px; border-left:3px solid; }
+  .msg.err { background:rgba(255,95,87,.12); color:#a3241d; border-color:#d33a30; }
+  .msg.warn { background:rgba(255,181,71,.16); color:#7a4a00; border-color:#d48a12; }
+  .note { font-size:13px; color:var(--s-muted); }
+  .progress-bar { height:4px; background:var(--s-line); overflow:hidden; margin-bottom:22px; }
+  .progress-bar i { display:block; height:100%; width:0; background:var(--or); transition:width .8s var(--ease); position:relative; overflow:hidden; }
+  .progress-bar i::after { content:""; position:absolute; inset:0; background:linear-gradient(90deg,transparent,#fff8,transparent); animation:sheen 1.4s linear infinite; }
+  @keyframes sheen { from { transform:translateX(-100%); } to { transform:translateX(100%); } }
+  .steps { list-style:none; padding:0; margin:0; counter-reset:s; }
+  .steps li { counter-increment:s; display:grid; grid-template-columns:44px 1fr 20px; gap:12px; align-items:center; padding:12px 0; border-bottom:1px solid var(--s-line); color:var(--s-muted); font-size:15px; transition:color .3s; }
+  .steps li::before { content:counter(s,decimal-leading-zero); font:500 12px "IBM Plex Mono",monospace; }
+  .steps li .dot { order:3; width:12px; height:12px; justify-self:end; border:1px solid var(--s-line); }
+  .steps li.done { color:#0a0a0a; } .steps li.done .dot { background:#0a0a0a; border-color:#0a0a0a; }
+  .steps li.now { color:#0a0a0a; font-weight:600; } .steps li.now::before { color:var(--or); }
+  .steps li.now .dot { background:var(--or); border-color:var(--or); animation:sq 1s var(--ease) infinite; }
+  @keyframes sq { 50% { transform:rotate(90deg) scale(.6); } }
+  #elapsed { font-family:"IBM Plex Mono",monospace; margin-top:12px; }
+  .tabs { display:flex; border-bottom:1px solid #0a0a0a; margin:0 0 24px; overflow-x:auto; }
+  .tabs button { font:500 12px "IBM Plex Mono",monospace; letter-spacing:.08em; text-transform:uppercase; border:0; background:none; color:var(--s-muted); padding:14px 18px; cursor:pointer; white-space:nowrap; transition:color .2s, background .3s; }
+  .tabs button:hover { color:#0a0a0a; }
+  .tabs button[aria-selected="true"] { background:#0a0a0a; color:var(--ink); }
+  [data-p] { animation:wipe .7s var(--ease-out); }
+  iframe { width:100%; height:min(74vh,780px); border:0; background:#0a0a0a; display:block; }
+  #studio a { text-decoration-color:var(--or); text-underline-offset:3px; }
+  .stats { display:grid; grid-template-columns:repeat(auto-fit,minmax(160px,1fr)); gap:1px; background:var(--s-line); border:1px solid var(--s-line); margin-bottom:16px; }
+  .stat { background:var(--ink); padding:18px; }
+  .stat .v { font-weight:800; font-stretch:118%; font-size:28px; letter-spacing:-.04em; font-variant-numeric:tabular-nums; }
+  .stat .k { font:400 11px "IBM Plex Mono",monospace; letter-spacing:.06em; text-transform:uppercase; color:var(--s-muted); }
+  table { width:100%; border-collapse:collapse; font-size:14px; }
+  th, td { text-align:left; padding:12px; border-bottom:1px solid var(--s-line); }
+  tr:hover td { background:var(--s-bg); }
+  th { font:500 11px "IBM Plex Mono",monospace; letter-spacing:.1em; text-transform:uppercase; color:var(--s-muted); border-bottom-color:#0a0a0a; }
+  td.n, th.n { text-align:right; font-variant-numeric:tabular-nums; font-family:"IBM Plex Mono",monospace; }
+  .tablewrap { overflow-x:auto; }
+  .gallery { display:grid; grid-template-columns:repeat(auto-fill,minmax(260px,1fr)); gap:1px; background:var(--s-line); border:1px solid var(--s-line); }
+  .gallery figure { margin:0; background:var(--ink); overflow:hidden; }
+  .gallery img { width:100%; aspect-ratio:4/3; object-fit:contain; background:#fff; display:block; cursor:zoom-in; transition:transform .6s var(--ease); }
+  .gallery figure:hover img { transform:scale(1.04); }
+  .gallery figcaption { padding:12px 14px; font-weight:700; text-transform:uppercase; letter-spacing:-.01em; }
+  .gallery figcaption small { display:block; color:var(--s-muted); font-weight:400; text-transform:none; letter-spacing:0; font-size:13px; }
+  .dl { border-top:1px solid #0a0a0a; }
+  .dl a { display:grid; grid-template-columns:220px 1fr 24px; gap:20px; align-items:center; padding:16px 0; border-bottom:1px solid var(--s-line); text-decoration:none; transition:padding .4s var(--ease), background .3s, color .3s; }
+  .dl a::after { content:"↓"; font-family:"IBM Plex Mono",monospace; text-align:right; }
+  .dl a:hover { padding-left:14px; padding-right:14px; background:#0a0a0a; color:var(--ink); }
+  .dl a:hover small { color:#a29d93; }
+  .dl a b { font:500 14px "IBM Plex Mono",monospace; }
+  .dl a small { color:var(--s-muted); font-size:13px; }
+  @media (max-width:600px) { .dl a { grid-template-columns:1fr 20px; } .dl a small { grid-column:1; } }
+  dialog { border:0; padding:0; max-width:95vw; max-height:92vh; background:#fff; }
   dialog img { display:block; max-width:95vw; max-height:88vh; }
-  dialog::backdrop { background:#000a; }
-  @media (max-width:560px) { .card { padding:16px; } header h1 { font-size:19px; } }
+  dialog::backdrop { background:#0a0a0aee; }
+
+  /* footer */
+  footer { padding:120px 0 32px; overflow:hidden; }
+  footer .cta-line { display:flex; justify-content:space-between; align-items:end; gap:40px; flex-wrap:wrap; margin-bottom:80px; }
+  .giant { font-weight:900; font-stretch:125%; text-transform:uppercase; font-size:14.6vw; line-height:.8; letter-spacing:-.065em; white-space:nowrap; color:var(--or); overflow:hidden; padding:0 .02em; }
+  .giant .ch { display:inline-block; transform:translateY(105%); transition:transform 1.1s var(--ease); }
+  .giant.in .ch { transform:none; }
+  .foot-row { display:flex; justify-content:space-between; gap:20px; flex-wrap:wrap; border-top:1px solid var(--line-2); padding-top:20px; margin-top:24px; }
+
+  .rv { opacity:0; transform:translateY(40px); transition:opacity 1.1s var(--ease-out), transform 1.1s var(--ease-out); }
+  .rv.in { opacity:1; transform:none; }
+
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { animation:none !important; transition:none !important; }
+    .rv, .fade-up { opacity:1; transform:none; }
+    .line-mask > span, .giant .ch { transform:none; }
+    .hscroll { height:auto; } .hscroll .sticky { position:static; height:auto; padding:80px 0; } .htrack { flex-wrap:wrap; }
+    .panel .dash { stroke-dashoffset:0; }
+  }
 </style>
 </head>
-<body>
-<div class="wrap">
-  <header>
-    <h1>Blueprint → 3D</h1>
-    <p>Turn a floor plan into a measured, walkable 3D model.</p>
-  </header>
+<body class="loading">
+<div class="grain" aria-hidden="true"></div>
 
-  <section class="card" id="pick">
-    <h2><span class="num">1</span> Choose a floor plan</h2>
-    <div class="seg" role="tablist">
-      <button role="tab" id="tDemo" aria-selected="true">Demo blueprints</button>
-      <button role="tab" id="tUp" aria-selected="false">Upload your own</button>
-    </div>
-
-    <div id="pDemo">
-      <div class="grid" id="demos"></div>
-    </div>
-
-    <div id="pUp" class="hidden">
-      <div class="drop" id="drop" tabindex="0" role="button" aria-label="Choose a floor plan file">
-        <strong>Drop a floor plan here, or click to browse</strong>
-        <span class="hint">Floor plan: PNG, JPG/JPEG or PDF · up to <span id="maxmb">25</span> MB. Room video: MP4/MOV · up to 300 MB</span>
-        <input type="file" id="file" class="hidden" accept=".png,.jpg,.jpeg,.pdf,.mp4,.mov,.m4v,image/png,image/jpeg,application/pdf,video/mp4,video/quicktime">
-      </div>
-      <div class="formats">
-        <div class="fmt">
-          <h3>Accepted file formats</h3>
-          <div class="chips"><span class="chip">.png</span><span class="chip">.jpg</span><span class="chip">.jpeg</span><span class="chip">.pdf</span></div>
-          <ul>
-            <li>PDF: the <b>first page</b> is used.</li>
-            <li>Maximum size 25 MB.</li>
-            <li>Other formats (HEIC, TIFF, DWG, SVG) are not supported. Export to PNG or PDF first.</li>
-          </ul>
-        </div>
-        <div class="fmt">
-          <h3>For best results</h3>
-          <ul>
-            <li>A top-down architectural floor plan: a scan, export or screenshot, not a photo taken at an angle.</li>
-            <li>At least 800 px on the long side; one floor per image works best.</li>
-            <li>Dark walls on a light background.</li>
-          </ul>
-        </div>
-        <div class="fmt">
-          <h3>Real-world size</h3>
-          <ul>
-            <li>Dimension text such as <code>3600</code>, <code>3.6 m</code>, <code>12'6"</code>, <code>3.4 x 4.1 m</code> or room areas (<code>12.5 m²</code>) lets it measure true size.</li>
-            <li>Without them, size is estimated from door widths (≈ 0.78 m).</li>
-          </ul>
-        </div>
-      </div>
-    </div>
-
-    <div class="picked hidden" id="picked"></div>
-    <div class="msg err hidden" id="pickErr"></div>
-  </section>
-
-  <section class="card">
-    <h2><span class="num">2</span> Analyse</h2>
-    <div class="row">
-      <label class="field">Wall height (m)
-        <input type="number" id="wallH" min="2" max="6" step="0.1" value="2.7">
-      </label>
-      <button class="btn" id="go" disabled>Analyse floor plan</button>
-      <span class="note" id="goNote">Pick a demo or upload a file first.</span>
-    </div>
-    <div id="prog" class="hidden" style="margin-top:16px">
-      <ol class="steps" id="steps"></ol>
-      <p class="note" id="elapsed"></p>
-    </div>
-    <div class="msg err hidden" id="runErr"></div>
-  </section>
-
-  <section class="card hidden" id="res">
-    <h2><span class="num">3</span> Result <span class="note" id="resName" style="font-weight:400"></span></h2>
-    <div class="tabs" role="tablist">
-      <button role="tab" data-t="v3d" aria-selected="true">3D model</button>
-      <button role="tab" data-t="vrooms" aria-selected="false">Rooms &amp; measurements</button>
-      <button role="tab" data-t="vstages" aria-selected="false">Analysis stages</button>
-      <button role="tab" data-t="vdl" aria-selected="false">Downloads</button>
-    </div>
-    <div data-p="v3d">
-      <iframe id="viewer" title="3D model viewer"></iframe>
-      <p class="note">Drag to orbit, scroll to zoom. <b>Walk</b>: click it, then WASD + mouse, Esc to exit. <b>2D plan</b> shows the drawing underneath.
-        <a id="openFull" target="_blank" rel="noopener">Open full screen ↗</a></p>
-    </div>
-    <div data-p="vrooms" class="hidden">
-      <div class="stats" id="stats"></div>
-      <div class="msg warn hidden" id="scaleWarn"></div>
-      <div class="tablewrap"><table id="rooms"></table></div>
-      <div id="notes" class="note" style="margin-top:12px"></div>
-    </div>
-    <div data-p="vstages" class="hidden"><div class="gallery" id="gallery"></div></div>
-    <div data-p="vdl" class="hidden"><div class="dl" id="dl"></div></div>
-  </section>
+<div class="pre" id="pre" aria-hidden="true">
+  <div class="row lbl"><span>Blueprint → 3D</span><span>Loading geometry engine</span></div>
+  <div>
+    <div class="count"><em id="preN" style="font-style:normal">000</em><span>%</span></div>
+    <div class="bar"><i id="preBar"></i></div>
+  </div>
+  <div class="row lbl"><span>Walls · Rooms · Openings · Scale</span><span>HNX26EPS06</span></div>
 </div>
+
+<nav class="top">
+  <a class="brand" href="#top"><span class="sq"></span>B→3D</a>
+  <div class="links">
+    <a href="#about"><span class="roll" data-t="About"><sup>01</sup>About</span></a>
+    <a href="#process"><span class="roll" data-t="Process"><sup>02</sup>Process</span></a>
+    <a href="#modes"><span class="roll" data-t="Modes"><sup>03</sup>Modes</span></a>
+    <a href="#tech"><span class="roll" data-t="Technology"><sup>04</sup>Technology</span></a>
+    <a href="#studio"><span class="roll" data-t="Studio"><sup>05</sup>Studio</span></a>
+  </div>
+  <div class="right"><span class="live"><i></i>Engine · local</span><a class="btn sm line" href="#studio">Studio ↗</a></div>
+</nav>
+
+<!-- HERO -->
+<header class="hero" id="top">
+  <canvas id="hero3d" aria-label="A floor plan being built into a 3D model"></canvas>
+  <div class="vignette"></div>
+  <div class="hud tl">PLAN_01 / APARTMENT<br>EXTRUDE <b id="hudH">0.00</b> m<br>SCALE 0.0124 m/px</div>
+  <div class="hud tr">AZIMUTH <b id="hudA">000°</b><br>WALLS 11 · DOORS 4<br>ROOMS 5</div>
+  <div class="wrap hero-inner" id="heroInner">
+    <h1 class="mega">
+      <span class="line-mask"><span>Floor plans</span></span>
+      <span class="line-mask"><span><span class="serif">become</span> walkable</span></span>
+      <span class="line-mask"><span>3D space.</span></span>
+    </h1>
+    <div class="hero-foot">
+      <p class="fade-up">A blueprint goes in. A <b>measured, navigable model</b> comes out, with walls, doors, windows and rooms in real metres, read from the dimensions on the drawing.</p>
+      <div class="specs fade-up"><div>Input <b>PNG · JPG · PDF · MP4</b></div><div>Time <b>10–30 s / plan</b></div></div>
+      <div class="specs fade-up"><div>Output <b>GLB · OBJ · JSON</b></div><div>Viewer <b>Orbit + walk</b></div></div>
+      <a class="btn fade-up" href="#studio">Build your model
+        <svg class="arr" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M13 5l7 7-7 7"/></svg></a>
+    </div>
+  </div>
+  <span class="cross" style="left:24px;bottom:24px"></span><span class="cross" style="right:24px;bottom:24px"></span>
+</header>
+
+<div class="ticker" aria-hidden="true"><div class="track" id="tick"></div></div>
+
+<!-- ABOUT -->
+<section class="block" id="about">
+  <div class="wrap">
+    <div class="sec-head"><span class="lbl idx">01 — About</span><span></span></div>
+    <p class="manifesto" id="manifesto">Pixels carry no scale. A floor-plan network gives you blurry masks, not walls. We fuse learned detection with classical geometry, read every dimension written on the drawing, and solve for the one scale that makes it all agree. The result is a <span class="serif">measured</span> building you can walk through.</p>
+    <div class="counters">
+      <div class="rv"><span class="lbl">Pipeline stages</span><b data-count="5">0</b><p>Ingest, detect, vectorise, measure, extrude. Each one saved as an image.</p></div>
+      <div class="rv"><span class="lbl">Per floor plan</span><b data-count="30" data-pre="10–">0<small>s</small></b><p>From upload to walkable model on a laptop CPU.</p></div>
+      <div class="rv"><span class="lbl">Door-width cue</span><b data-count="0.78" data-dec="2">0<small>m</small></b><p>Fallback scale when a drawing has no dimension text.</p></div>
+      <div class="rv"><span class="lbl">Video input</span><b data-count="300">0<small>MB</small></b><p>Room walkthroughs become 3D scenes with provenance.</p></div>
+    </div>
+  </div>
+</section>
+
+<!-- PROCESS -->
+<section class="hscroll" id="process">
+  <div class="sticky">
+    <div class="top-row">
+      <div><span class="lbl">02 — Process</span><h2 class="big" style="margin-top:14px">Five steps,<br><span class="serif">zero</span> guesswork.</h2></div>
+      <div class="prog"><i id="hprog"></i></div>
+    </div>
+    <div class="htrack" id="htrack">
+      <div class="panel intro"><span class="lbl" style="color:#0a0a0a">Scroll →</span>
+        <h3>From pixels to a building.</h3><p>A hybrid of the CubiCasa5K network and classical geometry. Nothing is hidden: you can inspect every intermediate stage.</p></div>
+      <div class="panel"><span class="n">01</span>
+        <svg class="ill" viewBox="0 0 200 120" fill="none" stroke="#ff5a1f" stroke-width="1.5"><rect class="dash" x="20" y="10" width="110" height="100"/><path class="dash" d="M110 10v30h20M40 30h50M40 50h70M40 70h40"/></svg>
+        <h3>Ingest</h3><p>PNG, JPG or the first page of a PDF is loaded and checked by content, not just its extension, then binarised so that ink is separated from paper.</p></div>
+      <div class="panel"><span class="n">02</span>
+        <svg class="ill" viewBox="0 0 200 120" fill="none" stroke="#ff5a1f" stroke-width="1.5"><rect class="dash" x="10" y="10" width="180" height="100"/><path class="dash" d="M90 10v100M10 60h80"/><circle class="dash" cx="140" cy="60" r="26"/><path class="dash" d="M158 78l20 20"/></svg>
+        <h3>Detect</h3><p>The learned network gives room, wall and icon probabilities. Morphological ink extraction keeps edges pixel-exact and catches hollow walls.</p></div>
+      <div class="panel"><span class="n">03</span>
+        <svg class="ill" viewBox="0 0 200 120" fill="none" stroke="#ff5a1f" stroke-width="1.5"><path class="dash" d="M10 10h180v100H10zM100 10v60M100 90v20M10 55h50M150 55h40"/><circle cx="100" cy="10" r="3" fill="#ff5a1f"/><circle cx="10" cy="55" r="3" fill="#ff5a1f"/><circle cx="190" cy="55" r="3" fill="#ff5a1f"/></svg>
+        <h3>Vectorise</h3><p>Walls become centrelines with a thickness and rooms become clean polygons. Doors and windows are snapped to their host walls.</p></div>
+      <div class="panel"><span class="n">04</span>
+        <svg class="ill" viewBox="0 0 200 120" fill="none" stroke="#ff5a1f" stroke-width="1.5"><path class="dash" d="M20 30h160M20 22v16M180 22v16M20 80h90M20 72v16M110 72v16"/><text x="82" y="22" fill="#ff5a1f" stroke="none" font-family="IBM Plex Mono" font-size="11">3600</text><text x="45" y="72" fill="#ff5a1f" stroke="none" font-family="IBM Plex Mono" font-size="11">2.10 m</text></svg>
+        <h3>Measure</h3><p>OCR reads dimension strings and room areas. Each one votes for a scale, and a constraint solver makes the walls agree with the written numbers.</p></div>
+      <div class="panel"><span class="n">05</span>
+        <svg class="ill" viewBox="0 0 200 120" fill="none" stroke="#ff5a1f" stroke-width="1.5"><path class="dash" d="M30 90l70-30 70 30-70 30zM30 90V40l70-30 70 30v50M100 60V10"/></svg>
+        <h3>Extrude</h3><p>Walls rise to your chosen height. Orbit, walk through in first person with wall collision, or export to Blender and game engines.</p></div>
+    </div>
+  </div>
+</section>
+
+<!-- MODES -->
+<section class="block" id="modes" style="padding-bottom:0">
+  <div class="wrap">
+    <div class="sec-head">
+      <span class="lbl idx">03 — Two inputs</span>
+      <h2 class="big rv">A drawing, <span class="serif">or</span><br>a phone video.</h2>
+    </div>
+  </div>
+  <div class="modes">
+    <a class="mode" href="#studio">
+      <span class="lbl">Mode A — Floor plan</span>
+      <h3>Blueprint<br>to <span class="serif">metric</span><br>model</h3>
+      <p>Architectural drawings, scans, CAD exports, even hand-drafted pencil plans.</p>
+      <ul>
+        <li>Detects <b>Walls · doors · windows · rooms</b></li>
+        <li>Scale from <b>Dimensions · areas · doors</b></li>
+        <li>Multi-storey <b>Stacked levels</b></li>
+        <li>Time <b>≈ 10–30 s</b></li>
+      </ul>
+      <div class="vis"><svg viewBox="0 0 400 180" fill="none" stroke="#ff5a1f" stroke-width="1.5">
+        <path class="draw" d="M40 20h320v140H40zM180 20v80M180 130v30M180 100h-60M270 20v140M40 90h60"/>
+        <path class="draw" d="M300 160a28 28 0 0 0-28-28M120 20h40" stroke-width="3"/></svg></div>
+    </a>
+    <a class="mode" href="#studio">
+      <span class="lbl">Mode B — Room video</span>
+      <h3>Walkthrough<br>to <span class="serif">3D</span><br>scene</h3>
+      <p>Film a room on your phone. Camera motion, metric depth and multi-view stereo are fused into one surface.</p>
+      <ul>
+        <li>Fits <b>Floor · ceiling · walls</b></li>
+        <li>Unseen areas <b>Filled + flagged</b></li>
+        <li>Provenance <b>Observed vs generated</b></li>
+        <li>Input <b>MP4 / MOV ≤ 300 MB</b></li>
+      </ul>
+      <div class="vis"><span class="scanline"></span><svg viewBox="0 0 400 180" fill="none" stroke="#ff5a1f" stroke-width="1.5">
+        <path d="M80 140V50l120-30 120 30v90l-120 30z"/><path d="M80 50l120 30 120-30M200 80v90" stroke-dasharray="4 5"/></svg></div>
+    </a>
+  </div>
+</section>
+
+<!-- TECH -->
+<section class="block" id="tech">
+  <div class="wrap">
+    <div class="sec-head">
+      <span class="lbl idx">04 — Technology</span>
+      <h2 class="big rv">Measured,<br><span class="serif">not just</span> modelled.</h2>
+    </div>
+    <div class="tech">
+      <div class="trow rv"><span class="lbl">T/01</span><h3>Constraint solver</h3>
+        <div><p>Wall positions, extents and thicknesses, plus one global log-scale, are fitted under a Huber loss.</p>
+        <div class="eq">min Σ ρ(r<sub>i</sub>/σ<sub>i</sub>)   r ∈ {fidelity, junctions, <b>OCR spans</b>, areas}</div></div>
+        <span class="pl"><svg viewBox="0 0 14 14" stroke="currentColor" stroke-width="1.5"><path d="M7 0v14M0 7h14"/></svg></span></div>
+      <div class="trow rv"><span class="lbl">T/02</span><h3>Scale by vote</h3>
+        <p>Every dimension string proposes metres-per-pixel hypotheses. The scale is the peak of a log-space density, accepted only when two independent annotations agree.</p>
+        <span class="pl"><svg viewBox="0 0 14 14" stroke="currentColor" stroke-width="1.5"><path d="M7 0v14M0 7h14"/></svg></span></div>
+      <div class="trow rv"><span class="lbl">T/03</span><h3>Hybrid detection</h3>
+        <p>CubiCasa5K segmentation intersected with Otsu ink and morphological opening: learned semantics with classical precision.</p>
+        <span class="pl"><svg viewBox="0 0 14 14" stroke="currentColor" stroke-width="1.5"><path d="M7 0v14M0 7h14"/></svg></span></div>
+      <div class="trow rv"><span class="lbl">T/04</span><h3>Room topology</h3>
+        <p>Enclosed space is split only along rays from reflex corners where room types change. Rectangles are never cut, and virtual boundaries stay straight.</p>
+        <span class="pl"><svg viewBox="0 0 14 14" stroke="currentColor" stroke-width="1.5"><path d="M7 0v14M0 7h14"/></svg></span></div>
+      <div class="trow rv"><span class="lbl">T/05</span><h3>Open by default</h3>
+        <p>GLB, OBJ + MTL, layout.json and a self-contained viewer.html. Every stage image and every fallback that fired is included.</p>
+        <span class="pl"><svg viewBox="0 0 14 14" stroke="currentColor" stroke-width="1.5"><path d="M7 0v14M0 7h14"/></svg></span></div>
+    </div>
+  </div>
+</section>
+
+<!-- STUDIO -->
+<section class="block" id="studio">
+  <div class="wrap">
+    <div class="sec-head">
+      <span class="lbl idx">05 — Studio</span>
+      <h2 class="big rv">Build <span class="serif">your</span><br>model.</h2>
+    </div>
+    <div class="studio">
+      <aside class="rail">
+        <div class="st on" data-s="pick"><b>01</b>Source</div>
+        <div class="st" data-s="analyse"><b>02</b>Analyse</div>
+        <div class="st" data-s="res"><b>03</b>Result</div>
+        <p class="note">Processing runs locally on this machine. Files are stored in <code>app_data/jobs/</code>.</p>
+      </aside>
+      <div class="panes">
+        <section class="card active" id="pick">
+          <h2><span class="num">1</span> Choose a plan or video</h2>
+          <div class="seg" role="tablist">
+            <button role="tab" id="tDemo" aria-selected="true">Demo blueprints</button>
+            <button role="tab" id="tUp" aria-selected="false">Upload your own</button>
+          </div>
+          <div id="pDemo"><div class="grid" id="demos"></div></div>
+          <div id="pUp" class="hidden">
+            <div class="drop" id="drop" tabindex="0" role="button" aria-label="Choose a floor plan file">
+              <strong>Drop a plan <span class="serif">or</span> video here</strong>
+              <span class="hint">Floor plan: PNG, JPG/JPEG or PDF · up to <span id="maxmb">25</span> MB. Room video: MP4/MOV · up to 300 MB</span>
+              <input type="file" id="file" class="hidden" accept=".png,.jpg,.jpeg,.pdf,.mp4,.mov,.m4v,image/png,image/jpeg,application/pdf,video/mp4,video/quicktime">
+            </div>
+            <div class="formats">
+              <div class="fmt">
+                <h3>Accepted formats</h3>
+                <div class="chips"><span class="chip">.png</span><span class="chip">.jpg</span><span class="chip">.jpeg</span><span class="chip">.pdf</span><span class="chip">.mp4</span><span class="chip">.mov</span></div>
+                <ul>
+                  <li>PDF: the <b>first page</b> is used.</li>
+                  <li>Maximum size 25 MB (videos 300 MB).</li>
+                  <li>HEIC, TIFF, DWG and SVG are not supported. Export to PNG or PDF first.</li>
+                </ul>
+              </div>
+              <div class="fmt">
+                <h3>For best results</h3>
+                <ul>
+                  <li>A top-down architectural floor plan: a scan, export or screenshot, not a photo taken at an angle.</li>
+                  <li>At least 800 px on the long side; one floor per image works best.</li>
+                  <li>Dark walls on a light background.</li>
+                </ul>
+              </div>
+              <div class="fmt">
+                <h3>Real-world size</h3>
+                <ul>
+                  <li>Dimension text such as <code>3600</code>, <code>3.6 m</code>, <code>12'6"</code>, <code>3.4 x 4.1 m</code> or room areas (<code>12.5 m²</code>) lets it measure true size.</li>
+                  <li>Without them, size is estimated from door widths (≈ 0.78 m).</li>
+                </ul>
+              </div>
+            </div>
+          </div>
+          <div class="picked hidden" id="picked"></div>
+          <div class="msg err hidden" id="pickErr"></div>
+        </section>
+
+        <section class="card" id="analyse">
+          <h2><span class="num">2</span> Analyse</h2>
+          <div class="row">
+            <label class="field">Wall height (m)
+              <input type="number" id="wallH" min="2" max="6" step="0.1" value="2.7">
+            </label>
+            <button class="btn" id="go" disabled>Build 3D model
+              <svg class="arr" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M13 5l7 7-7 7"/></svg></button>
+            <span class="note" id="goNote">Pick a demo or upload a file first.</span>
+          </div>
+          <div id="prog" class="hidden" style="margin-top:28px">
+            <div class="progress-bar"><i id="pbar"></i></div>
+            <ol class="steps" id="steps"></ol>
+            <p class="note" id="elapsed"></p>
+          </div>
+          <div class="msg err hidden" id="runErr"></div>
+        </section>
+
+        <section class="card hidden" id="res" style="border-bottom:0">
+          <h2><span class="num">3</span> Result <span class="note" id="resName" style="font-weight:400;text-transform:none;letter-spacing:0"></span></h2>
+          <div class="tabs" role="tablist">
+            <button role="tab" data-t="v3d" aria-selected="true">3D model</button>
+            <button role="tab" data-t="vrooms" aria-selected="false">Rooms &amp; measurements</button>
+            <button role="tab" data-t="vstages" aria-selected="false">Analysis stages</button>
+            <button role="tab" data-t="vdl" aria-selected="false">Downloads</button>
+          </div>
+          <div data-p="v3d">
+            <iframe id="viewer" title="3D model viewer"></iframe>
+            <p class="note">Drag to orbit, scroll to zoom. <b>Walk</b>: click it, then WASD + mouse, Esc to exit. <b>2D plan</b> shows the drawing underneath.
+              <a id="openFull" target="_blank" rel="noopener">Open full screen ↗</a></p>
+          </div>
+          <div data-p="vrooms" class="hidden">
+            <div class="stats" id="stats"></div>
+            <div class="msg warn hidden" id="scaleWarn"></div>
+            <div class="tablewrap" style="margin-top:18px"><table id="rooms"></table></div>
+            <div id="notes" class="note" style="margin-top:12px"></div>
+          </div>
+          <div data-p="vstages" class="hidden"><div class="gallery" id="gallery"></div></div>
+          <div data-p="vdl" class="hidden"><div class="dl" id="dl"></div></div>
+        </section>
+      </div>
+    </div>
+  </div>
+</section>
+
+<footer>
+  <div class="wrap">
+    <div class="cta-line">
+      <h2 class="big rv">Got a plan?<br><span class="serif">Let's</span> build it.</h2>
+      <a class="btn" href="#studio">Build your model <svg class="arr" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M13 5l7 7-7 7"/></svg></a>
+    </div>
+  </div>
+  <div class="giant" id="giant">Blueprint→3D</div>
+  <div class="wrap">
+    <div class="foot-row lbl"><span>Track HNX26EPS06</span><span>CubiCasa5K · RapidOCR · SciPy · three.js</span><span>© 2026</span></div>
+  </div>
+</footer>
 <dialog id="zoom"><img alt=""></dialog>
 
+<!-- ======================= motion ======================= -->
+<script>
+(() => {
+  const $$ = s => document.querySelectorAll(s);
+  const reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+  // preloader
+  const pre = document.getElementById("pre"), preN = document.getElementById("preN"), preBar = document.getElementById("preBar");
+  const t0 = performance.now(), DUR = reduce ? 1 : 1500;
+  (function tickPre(now){
+    const p = Math.min(1, (now - t0) / DUR), e = 1 - Math.pow(1 - p, 3);
+    preN.textContent = String(Math.round(e * 100)).padStart(3, "0"); preBar.style.transform = `scaleX(${e})`;
+    if (p < 1) return requestAnimationFrame(tickPre);
+    setTimeout(() => { pre.classList.add("done"); document.body.classList.remove("loading");
+      document.getElementById("heroInner").classList.add("in"); window.heroStarted = true; window.dispatchEvent(new Event("heroStart")); }, 200);
+  })(t0);
+
+  // magnetic buttons
+  if (!reduce && matchMedia("(pointer:fine)").matches) $$(".btn").forEach(b => {
+    b.addEventListener("pointermove", e => { if (b.disabled) return; const r = b.getBoundingClientRect();
+      b.style.transform = `translate(${(e.clientX - r.left - r.width / 2) * .2}px,${(e.clientY - r.top - r.height / 2) * .3}px)`; });
+    b.addEventListener("pointerleave", () => b.style.transform = "");
+  });
+
+  // ticker
+  const words = ["Walls","Doors","Windows","Rooms","Metres","Scale","Walkthrough","Export"];
+  const track = document.getElementById("tick");
+  const html = words.map(w => `<span>${w}</span><span class="star">✱</span>`).join("");
+  track.innerHTML = html + html;
+  let tx = 0, lastY = scrollY, vel = 0;
+
+  // manifesto word split
+  const man = document.getElementById("manifesto");
+  man.innerHTML = man.innerHTML.replace(/(<span class="serif">[^<]+<\/span>)|([^\s<]+)/g,
+    (m, s) => s ? s.replace('class="serif"', 'class="serif w"') : `<span class="w">${m}</span>`);
+  const W = man.querySelectorAll(".w");
+
+  // footer letters
+  const g = document.getElementById("giant");
+  g.innerHTML = [...g.textContent].map((c, i) => `<span class="ch" style="transition-delay:${i * 35}ms">${c}</span>`).join("");
+
+  // reveals + counters
+  const io = new IntersectionObserver(es => es.forEach(e => {
+    if (!e.isIntersecting) return; e.target.classList.add("in"); io.unobserve(e.target);
+    e.target.querySelectorAll("[data-count]").forEach(count);
+  }), {threshold:.15});
+  $$(".rv, .giant").forEach(el => io.observe(el));
+  function count(b){
+    const to = +b.dataset.count, dec = +(b.dataset.dec || 0), pre = b.dataset.pre || "", small = b.querySelector("small");
+    const sm = small ? small.outerHTML : "", s = performance.now();
+    (function f(n){ const k = Math.min(1, (n - s) / 1600), e = 1 - Math.pow(1 - k, 4);
+      b.innerHTML = (k < 1 ? "" : pre) + (to * e).toFixed(dec) + sm; if (k < 1) requestAnimationFrame(f); })(s);
+  }
+
+  // modes: fill grows from the entry point
+  $$(".mode").forEach(m => m.addEventListener("pointerenter", e => { const r = m.getBoundingClientRect();
+    m.style.setProperty("--x", (e.clientX - r.left) + "px"); m.style.setProperty("--y", (e.clientY - r.top) + "px"); }));
+
+  const hs = document.querySelector(".hscroll"), htrack = document.getElementById("htrack"), hprog = document.getElementById("hprog");
+  const panels = htrack.querySelectorAll(".panel");
+  function onFrame(){
+    const y = scrollY; vel += ((y - lastY) - vel) * .1; lastY = y;
+    if (!reduce) {
+      tx -= 1 + Math.abs(vel) * .35; const half = track.scrollWidth / 2; if (half && -tx > half) tx += half;
+      track.style.transform = `translateX(${tx}px) skewX(${Math.max(-12, Math.min(12, -vel * .3))}deg)`;
+      const r = hs.getBoundingClientRect(), k = Math.max(0, Math.min(1, -r.top / (r.height - innerHeight)));
+      htrack.style.transform = `translateX(${-k * Math.max(0, htrack.scrollWidth - innerWidth)}px)`; hprog.style.transform = `scaleX(${k})`;
+    }
+    panels.forEach(pn => { if (pn.getBoundingClientRect().left < innerWidth * .8 && pn.getBoundingClientRect().top < innerHeight) pn.classList.add("on"); });
+    const mr = man.getBoundingClientRect(), mp = (innerHeight * .85 - mr.top) / (mr.height + innerHeight * .3);
+    const on = reduce ? W.length : Math.floor(Math.max(0, Math.min(1, mp)) * W.length * 1.05);
+    W.forEach((w, i) => w.classList.toggle("on", i < on));
+    requestAnimationFrame(onFrame);
+  }
+  onFrame();
+
+  window.railSet = id => $$(".rail .st").forEach(s => s.classList.toggle("on", s.dataset.s === id));
+})();
+</script>
+
+<!-- ======================= hero 3D ======================= -->
+<script type="importmap">{ "imports": { "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js" } }</script>
+<script type="module">
+import * as THREE from "three";
+const canvas = document.getElementById("hero3d");
+const reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
+const renderer = new THREE.WebGLRenderer({canvas, antialias:true, alpha:true});
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.shadowMap.enabled = true; renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+const scene = new THREE.Scene(); scene.fog = new THREE.Fog(0x0a0a0a, 22, 48);
+const cam = new THREE.PerspectiveCamera(32, 1, .1, 200);
+
+const OR = 0xff5a1f, H = 2.8, T = .2;
+const WL = [[-6,-4,6,-4],[6,-4,6,4],[6,4,-6,4],[-6,4,-6,-4],[-1,-4,-1,-.6],[-1,.6,-1,4],[-6,0,-3.2,0],[-2,0,-1,0],[-1,1,2.2,1],[3.4,1,6,1],[2.5,1,2.5,4]];
+const DOORS = [[-1,0],[-2.6,0],[2.8,1],[0,-4]];
+const g = new THREE.Group(); scene.add(g);
+
+const ground = new THREE.Mesh(new THREE.PlaneGeometry(200, 200), new THREE.MeshStandardMaterial({color:0x0d0d0c, roughness:1}));
+ground.rotation.x = -Math.PI / 2; ground.receiveShadow = true; scene.add(ground);
+const grid = new THREE.GridHelper(80, 80, 0x2a2824, 0x1a1917); grid.position.y = .005; scene.add(grid);
+
+const wallMat = new THREE.MeshStandardMaterial({color:0x1a1917, roughness:.85, metalness:.1});
+const capMat = new THREE.MeshBasicMaterial({color:OR});
+const lineMat = new THREE.LineBasicMaterial({color:OR});
+const edgeMat = new THREE.LineBasicMaterial({color:0x3d3a35});
+
+const walls = WL.map(([x1,z1,x2,z2], i) => {
+  const len = Math.hypot(x2 - x1, z2 - z1), ang = Math.atan2(z2 - z1, x2 - x1);
+  const lg = new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(x1,.02,z1), new THREE.Vector3(x2,.02,z2)]);
+  const line = new THREE.Line(lg, lineMat); lg.setDrawRange(0, 0); g.add(line);
+  const pivot = new THREE.Group(); pivot.position.set((x1 + x2) / 2, 0, (z1 + z2) / 2); pivot.rotation.y = -ang; g.add(pivot);
+  const box = new THREE.Mesh(new THREE.BoxGeometry(len + T, H, T), wallMat); box.position.y = H / 2; box.castShadow = box.receiveShadow = true;
+  box.add(new THREE.LineSegments(new THREE.EdgesGeometry(box.geometry), edgeMat));
+  const cap = new THREE.Mesh(new THREE.BoxGeometry(len + T, .03, T + .01), capMat); cap.position.y = H + .015;
+  pivot.add(box, cap); pivot.scale.y = .0001;
+  return {line, pivot, d:i * .1};
+});
+DOORS.forEach(([x, z]) => {
+  const c = new THREE.EllipseCurve(0, 0, .8, .8, 0, Math.PI / 2);
+  const l = new THREE.Line(new THREE.BufferGeometry().setFromPoints(c.getPoints(24).map(p => new THREE.Vector3(p.x, .03, p.y))),
+    new THREE.LineDashedMaterial({color:OR, dashSize:.08, gapSize:.06}));
+  l.computeLineDistances(); l.position.set(x, 0, z); g.add(l);
+});
+[[-6,-5.2,6,-5.2],[-6,-5.5,-6,-4.9],[6,-5.5,6,-4.9]].forEach(([a,b,c,d]) =>
+  g.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(a,.02,b), new THREE.Vector3(c,.02,d)]), lineMat)));
+const glow = new THREE.Mesh(new THREE.PlaneGeometry(12, 8), new THREE.MeshBasicMaterial({color:OR, transparent:true, opacity:0}));
+glow.rotation.x = -Math.PI / 2; glow.position.y = .01; g.add(glow);
+const slab = new THREE.Mesh(new THREE.PlaneGeometry(12.4, 8.4), new THREE.MeshBasicMaterial({color:OR, transparent:true, opacity:0, side:THREE.DoubleSide, depthWrite:false}));
+slab.rotation.x = -Math.PI / 2; g.add(slab);
+
+scene.add(new THREE.AmbientLight(0xffffff, .35));
+const key = new THREE.DirectionalLight(0xfff1e6, 2.2); key.position.set(-10, 16, 8); key.castShadow = true;
+key.shadow.mapSize.set(2048, 2048); Object.assign(key.shadow.camera, {left:-14, right:14, top:14, bottom:-14}); scene.add(key);
+const warm = new THREE.PointLight(OR, 60, 18, 1.6); warm.position.set(0, 2.2, 0); g.add(warm);
+
+function size(){
+  const w = canvas.clientWidth, h = canvas.clientHeight; renderer.setSize(w, h, false); cam.aspect = w / h;
+  cam.fov = w < 700 ? 50 : 32; g.position.x = w < 1000 ? 0 : 4; cam.updateProjectionMatrix();
+}
+size(); addEventListener("resize", size);
+
+let mx = 0, my = 0, started = reduce || !!window.heroStarted, tStart = performance.now();
+addEventListener("pointermove", e => { mx = e.clientX / innerWidth - .5; my = e.clientY / innerHeight - .5; }, {passive:true});
+addEventListener("heroStart", () => { started = true; tStart = performance.now(); });
+const ease = t => t <= 0 ? 0 : t >= 1 ? 1 : 1 - Math.pow(1 - t, 4);
+const hudH = document.getElementById("hudH"), hudA = document.getElementById("hudA");
+let visible = true; new IntersectionObserver(([e]) => visible = e.isIntersecting).observe(canvas);
+
+function frame(now){
+  requestAnimationFrame(frame);
+  if (!visible) return;
+  const t = reduce ? 99 : started ? (now - tStart) / 1000 : 0;
+  const sc = Math.min(1, scrollY / innerHeight);
+  walls.forEach(w => {
+    w.line.geometry.setDrawRange(0, t > w.d * .6 ? 2 : 0);
+    w.pivot.scale.y = Math.max(.0001, ease((t - 1.4 - w.d) / 1.6));
+  });
+  hudH.textContent = (ease((t - 1.4) / 2.6) * H).toFixed(2);
+  glow.material.opacity = .05 * ease((t - 3) / 1.5);
+  const s = (t * .25) % 1; slab.position.y = s * H * 1.2; slab.material.opacity = t > 3.5 && !reduce ? .08 * Math.sin(s * Math.PI) : 0;
+  // camera sweeps down from a plan view, then orbits slowly; scrolling pulls it up and back
+  const intro = ease(t / 3.8), az = (reduce ? .9 : .9 + t * .05) + mx * .35;
+  const r = 20 + sc * 8, el = THREE.MathUtils.lerp(1.45, .62, intro) - my * .1 + sc * .35;
+  cam.position.set(Math.cos(az) * r * Math.cos(el) + g.position.x, Math.sin(el) * r, Math.sin(az) * r * Math.cos(el));
+  cam.lookAt(g.position.x, 1 - sc * 2, 0);
+  hudA.textContent = String(Math.round(((az * 180 / Math.PI) % 360 + 360) % 360)).padStart(3, "0") + "°";
+  renderer.render(scene, cam);
+}
+requestAnimationFrame(frame);
+</script>
+
+<!-- ======================= studio app ======================= -->
 <script>
 const $ = s => document.querySelector(s);
 const VSTEPS = [["frames","Picking sharp keyframes from the video"],["sfm","Recovering camera motion"],
@@ -227,6 +801,7 @@ const VIDEO_EXT = [".mp4",".mov",".m4v"], VMAX = 300 * 1024 * 1024;
 
 function esc(s){ return String(s).replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c])); }
 function show(el, on){ el.classList.toggle("hidden", !on); }
+function activeCard(id){ document.querySelectorAll(".panes .card").forEach(c => c.classList.toggle("active", c.id === id)); window.railSet && railSet(id); }
 
 // ---- source tabs
 function setSrc(up){
@@ -239,10 +814,10 @@ $("#tUp").onclick = () => setSrc(true);
 // ---- demos
 fetch("/api/demos").then(r => r.json()).then(list => {
   demos = list;
-  $("#demos").innerHTML = list.map(d => `
+  $("#demos").innerHTML = list.map((d, i) => `
     <button class="demo" data-id="${esc(d.id)}" aria-pressed="false">
       <div class="th"><img src="/demos/${esc(d.id)}_thumb.jpg" alt="${esc(d.title)} floor plan" loading="lazy"></div>
-      <div class="meta"><b>${esc(d.title)}</b><span>${esc(d.description)}</span></div>
+      <div class="meta"><i>PLAN ${String(i + 1).padStart(2, "0")}</i><b>${esc(d.title)}</b><span>${esc(d.description)}</span></div>
     </button>`).join("");
   document.querySelectorAll(".demo").forEach(b => b.onclick = () => {
     document.querySelectorAll(".demo").forEach(x => x.setAttribute("aria-pressed", x === b));
@@ -286,6 +861,7 @@ function choose(c){
   show(p, true);
   $("#go").disabled = false;
   $("#goNote").textContent = c.video ? "Room video: takes roughly 5-15 minutes on a laptop CPU." : "Takes about 10-30 seconds.";
+  activeCard("analyse");
 }
 
 // ---- analyse
@@ -314,6 +890,7 @@ function renderSteps(stage){
     const cls = stage === "done" || (idx >= 0 && i < idx) ? "done" : (i === idx || (stage === "queued" && i === 0) ? "now" : "");
     return `<li class="${cls}"><span class="dot"></span>${label}</li>`;
   }).join("");
+  $("#pbar").style.width = (stage === "done" ? 100 : Math.max(4, (Math.max(idx, 0) + .5) / STEPS.length * 100)) + "%";
 }
 function fail(m){ $("#runErr").textContent = m; show($("#runErr"), true); show($("#prog"), false); $("#go").disabled = false; }
 
@@ -335,6 +912,12 @@ document.querySelectorAll(".tabs button").forEach(b => b.onclick = () => {
 });
 function area(P){ let a=0; for(let i=0;i<P.length;i++){const [x1,y1]=P[i],[x2,y2]=P[(i+1)%P.length]; a+=x1*y2-x2*y1;} return Math.abs(a)/2; }
 function ext(P){ const xs=P.map(p=>p[0]), ys=P.map(p=>p[1]); return [Math.max(...xs)-Math.min(...xs), Math.max(...ys)-Math.min(...ys)]; }
+
+function revealResult(){
+  show($("#prog"), false); show($("#res"), true); activeCard("res");
+  document.querySelector('.tabs button[data-t="v3d"]').click();
+  $("#res").scrollIntoView({behavior:"smooth", block:"start"});
+}
 
 async function showVideoResult(j){
   const r = j.report || {}, room = r.room || {}, P = r.provenance || {};
@@ -371,9 +954,7 @@ async function showVideoResult(j){
     dl(j.files.cameras + "?download=1", "cameras.json", "Estimated camera intrinsics and poses") +
     dl(j.files.viewer, "viewer.html", "Self-contained 3D viewer you can share") +
     dl(j.files.report + "?download=1", "run_report.json", "Timings and any fallbacks used");
-  show($("#prog"), false); show($("#res"), true);
-  document.querySelector('.tabs button[data-t="v3d"]').click();
-  $("#res").scrollIntoView({behavior:"smooth", block:"start"});
+  revealResult();
 }
 
 async function showResult(j){
@@ -399,9 +980,9 @@ async function showResult(j){
     (levels ? stat(levels.length, "storeys, stacked: " + levels.map(l => esc(l.name)).join(" / ")) : "");
   const sc = SCALE_TXT[L.scale_source] || [L.scale_source, true];
   $("#scaleWarn").textContent = "Scale: " + sc[0];
-  $("#scaleWarn").className = "msg " + (sc[1] ? "warn" : "") ; show($("#scaleWarn"), true);
-  if (!sc[1]) { $("#scaleWarn").style.background = "var(--accent-soft)"; $("#scaleWarn").style.color = "var(--ink)"; }
-  else { $("#scaleWarn").style.background = ""; $("#scaleWarn").style.color = ""; }
+  $("#scaleWarn").className = "msg " + (sc[1] ? "warn" : ""); show($("#scaleWarn"), true);
+  if (!sc[1]) { $("#scaleWarn").style.background = "rgba(255,90,31,.10)"; $("#scaleWarn").style.color = "#0a0a0a"; $("#scaleWarn").style.borderColor = "#ff5a1f"; }
+  else { $("#scaleWarn").style.background = ""; $("#scaleWarn").style.color = ""; $("#scaleWarn").style.borderColor = ""; }
   $("#rooms").innerHTML = `<tr>${levels ? "<th>Floor</th>" : ""}<th>Room</th><th>Type</th><th class="n">Width (m)</th><th class="n">Length (m)</th><th class="n">Area (m²)</th></tr>` +
     rooms.map(r => `<tr>${levels ? `<td>${esc(lvName(r.lv))}</td>` : ""}<td>${esc(r.name)}</td><td>${esc(r.type)}</td><td class="n">${r.w.toFixed(2)}</td><td class="n">${r.l.toFixed(2)}</td><td class="n">${r.a.toFixed(1)}</td></tr>`).join("");
   const fb = (j.report && j.report.fallbacks || []).filter(f => !["walls"].includes(f.stage));
@@ -428,11 +1009,10 @@ async function showResult(j){
     dl(j.files.viewer, "viewer.html", "Self-contained 3D viewer you can share (open in a browser)") +
     dl(j.files.report + "?download=1", "run_report.json", "Timings and any fallbacks used");
 
-  show($("#prog"), false); show($("#res"), true);
-  document.querySelector('.tabs button[data-t="v3d"]').click();
-  $("#res").scrollIntoView({behavior:"smooth", block:"start"});
+  revealResult();
 }
 function JOBS_NAME(j){ return j.name; }
+$("#zoom").onclick = () => $("#zoom").close();
 fetch("/api/formats").then(r => r.json()).then(f => $("#maxmb").textContent = f.max_mb).catch(() => {});
 </script>
 </body>
