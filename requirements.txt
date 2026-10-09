@@ -17,3 +17,6 @@ rapidocr==3.9.2
 onnxruntime==1.30.0
 gdown==6.4.1
 tqdm==4.70.1
+# Mode B (video)
+onnx==1.23.2
+lpips==0.1.4

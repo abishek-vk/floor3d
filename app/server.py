@@ -40,7 +40,12 @@ FORMATS = {
     ".jpeg": [b"\xff\xd8\xff"],
     ".pdf": [b"%PDF-"],
 }
+# Mode B: room videos (content checked for an ISO-BMFF/QuickTime box header)
+VIDEO_FORMATS = {".mp4", ".mov", ".m4v"}
+VIDEO_BOXES = (b"ftyp", b"moov", b"mdat", b"wide", b"free", b"skip")
+MAX_VIDEO_BYTES = 300 * 1024 * 1024
 STAGES = ["queued", "ingest", "detect", "vectorize", "extrude", "viewer", "done"]
+VIDEO_STAGES = ["queued", "frames", "sfm", "depth", "fuse", "layout", "complete", "export", "viewer", "done"]
 STAGE_LABEL = {
     "queued": "Waiting to start",
     "ingest": "Reading and cleaning the image",
@@ -49,6 +54,13 @@ STAGE_LABEL = {
     "extrude": "Building the 3D model",
     "viewer": "Preparing the 3D viewer",
     "done": "Done",
+    "frames": "Picking sharp keyframes from the video",
+    "sfm": "Recovering camera motion (structure from motion)",
+    "depth": "Estimating metric depth and refining it with multi-view stereo",
+    "fuse": "Fusing depth into a 3D surface",
+    "layout": "Finding floor, ceiling and walls",
+    "complete": "Completing unseen walls/floor/ceiling (marked as generated)",
+    "export": "Writing the 3D scene",
 }
 
 log = logging.getLogger("fp3d.app")
@@ -57,10 +69,10 @@ JOBS_LOCK = threading.Lock()
 RUN_LOCK = threading.Lock()  # the pipeline is CPU-heavy: one job at a time
 
 
-def new_job(source: str, name: str, input_path: str, wall_height: float) -> str:
+def new_job(source: str, name: str, input_path: str, wall_height: float, mode: str = "plan") -> str:
     jid = uuid.uuid4().hex[:12]
     with JOBS_LOCK:
-        JOBS[jid] = {"id": jid, "source": source, "name": name, "input": input_path,
+        JOBS[jid] = {"id": jid, "source": source, "name": name, "input": input_path, "mode": mode,
                      "wall_height": wall_height, "stage": "queued", "status": "queued",
                      "error": None, "created": time.time(), "report": None}
     threading.Thread(target=_work, args=(jid,), daemon=True).start()
@@ -77,10 +89,15 @@ def _work(jid: str) -> None:
     job = JOBS[jid]
     out = os.path.join(JOBS_DIR, jid)
     with RUN_LOCK:
-        _set(jid, status="running", stage="ingest", started=time.time())
+        video = job.get("mode") == "video"
+        _set(jid, status="running", stage="frames" if video else "ingest", started=time.time())
         try:
-            rep = run(job["input"], out, "full", wall_height=job["wall_height"],
-                      progress=lambda s: _set(jid, stage=s))
+            if video:
+                from run_video import run as run_video
+                rep, _ = run_video(job["input"], out, "full", progress=lambda s: _set(jid, stage=s))
+            else:
+                rep = run(job["input"], out, "full", wall_height=job["wall_height"],
+                          progress=lambda s: _set(jid, stage=s))
             _set(jid, status="done", stage="done", report=rep, finished=time.time())
         except Exception as e:
             log.error("job %s failed: %s", jid, e)
@@ -88,17 +105,24 @@ def _work(jid: str) -> None:
 
 
 def _public(job: dict) -> dict:
-    j = {k: job.get(k) for k in ("id", "source", "name", "stage", "status", "error", "wall_height")}
+    j = {k: job.get(k) for k in ("id", "source", "name", "stage", "status", "error", "wall_height", "mode")}
+    stages = VIDEO_STAGES if job.get("mode") == "video" else STAGES
     j["stage_label"] = STAGE_LABEL.get(job["stage"], job["stage"])
-    j["stage_index"] = STAGES.index(job["stage"]) if job["stage"] in STAGES else 0
-    j["n_stages"] = len(STAGES) - 1
+    j["stage_index"] = stages.index(job["stage"]) if job["stage"] in stages else 0
+    j["n_stages"] = len(stages) - 1
     t0 = job.get("started") or job["created"]
     j["elapsed_s"] = round((job.get("finished") or time.time()) - t0, 1)
     if job["status"] == "done":
         base = f"/jobs/{job['id']}/"
-        j["files"] = {"viewer": base + "viewer.html", "glb": base + "model.glb", "obj": base + "model.obj",
-                      "mtl": base + "material.mtl", "layout": base + "layout.json",
-                      "report": base + "run_report.json"}
+        if job.get("mode") == "video":
+            j["files"] = {"viewer": base + "viewer.html", "glb": base + "scene.glb", "obj": base + "scene.obj",
+                          "layout": base + "layout.json", "layout_model": base + "layout_model.glb",
+                          "provenance": base + "provenance.json", "cameras": base + "cameras.json",
+                          "report": base + "run_report.json"}
+        else:
+            j["files"] = {"viewer": base + "viewer.html", "glb": base + "model.glb", "obj": base + "model.obj",
+                          "mtl": base + "material.mtl", "layout": base + "layout.json",
+                          "report": base + "run_report.json"}
         dbg = os.path.join(JOBS_DIR, job["id"], "debug")
         j["debug"] = [base + "debug/" + f for f in sorted(os.listdir(dbg))] if os.path.isdir(dbg) else []
         j["report"] = job["report"]
@@ -151,7 +175,8 @@ class Handler(BaseHTTPRequestHandler):
         if p == "/api/demos":
             return self._json(json.load(open(os.path.join(DEMOS, "demos.json"), encoding="utf8")))
         if p == "/api/formats":
-            return self._json({"accept": sorted(FORMATS), "max_mb": MAX_BYTES // (1024 * 1024)})
+            return self._json({"accept": sorted(FORMATS), "max_mb": MAX_BYTES // (1024 * 1024),
+                               "video_accept": sorted(VIDEO_FORMATS), "video_max_mb": MAX_VIDEO_BYTES // (1024 * 1024)})
         m = re.fullmatch(r"/api/jobs/([0-9a-f]{12})", p)
         if m:
             job = JOBS.get(m.group(1))
@@ -187,6 +212,8 @@ class Handler(BaseHTTPRequestHandler):
             n = int(self.headers.get("Content-Length", "0"))
             name = unquote(self.headers.get("X-Filename", "upload"))
             ext = os.path.splitext(name)[1].lower()
+            if ext in VIDEO_FORMATS:
+                return self._video_upload(n, name, ext)
             if ext not in FORMATS:
                 return self._json({"error": f"Unsupported file type '{ext or '?'}'. "
                                             f"Use PNG, JPG/JPEG or PDF."}, 400)
@@ -209,6 +236,23 @@ class Handler(BaseHTTPRequestHandler):
             return self._json({"job": jid})
 
         return self._json({"error": "not found"}, 404)
+
+    def _video_upload(self, n: int, name: str, ext: str):
+        if n <= 0:
+            return self._json({"error": "The file is empty."}, 400)
+        if n > MAX_VIDEO_BYTES:
+            return self._json({"error": f"Video is {n / 1048576:.1f} MB; the limit is "
+                                        f"{MAX_VIDEO_BYTES // 1048576} MB."}, 413)
+        data = self.rfile.read(n)
+        if data[4:8] not in VIDEO_BOXES:
+            return self._json({"error": f"The file is named {ext} but its contents are not an MP4/MOV video."}, 400)
+        up = os.path.join(DATA, "uploads", uuid.uuid4().hex[:12])
+        os.makedirs(up, exist_ok=True)
+        path = os.path.join(up, "input" + ext)
+        with open(path, "wb") as f:
+            f.write(data)
+        safe_name = re.sub(r"[^\w.\- ]", "_", os.path.basename(name))[:80]
+        return self._json({"job": new_job("upload", safe_name, path, 2.7, mode="video")})
 
 
 def main():
