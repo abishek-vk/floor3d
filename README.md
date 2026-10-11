@@ -11,6 +11,9 @@ metric 3D scene and labels every surface as either observed or generated.
 Results open in a self-contained browser viewer with orbit and first-person walk. They export to
 GLB, OBJ and JSON for Blender, three.js, game engines and BIM workflows.
 
+**Live demo:** https://floorplan3d-pearl.vercel.app (the six demo blueprints, pre-processed; uploads
+need a local install, see [Deployment](#deployment)).
+
 ---
 
 ## Contents
@@ -23,6 +26,7 @@ GLB, OBJ and JSON for Blender, three.js, game engines and BIM workflows.
   - [Web app](#web-app)
   - [Command line: floor plans](#command-line-floor-plans)
   - [Command line: room videos](#command-line-room-videos)
+  - [Deployment](#deployment)
 - [Outputs](#outputs)
 - [Project structure](#project-structure)
 - [Robustness and fallbacks](#robustness-and-fallbacks)
@@ -226,6 +230,21 @@ python run_video.py --input room.mp4 --out out/room --fov 70    # known horizont
 | `--no-debug`, `-v` | off | As above |
 
 A room video typically takes 5–15 minutes on a laptop CPU.
+
+### Deployment
+
+A static, demo-only copy of the web app is hosted on Vercel: **https://floorplan3d-pearl.vercel.app**
+
+It serves the six demo blueprints with their results pre-computed, so the 3D viewer, measurements,
+analysis stages and downloads all work in the browser. Uploading your own plans or videos needs
+the Python server, so run the [web app](#web-app) locally for that.
+
+To rebuild and redeploy:
+
+```bash
+python deploy/build_static.py --reuse   # writes the static site to web/
+npx vercel --prod                       # publishes web/ (see vercel.json)
+```
 
 ---
 
