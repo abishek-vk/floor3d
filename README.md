@@ -37,7 +37,7 @@ GLB, OBJ and JSON for Blender, three.js, game engines and BIM workflows.
 ## Features
 
 **Floor plan to 3D (Mode A)**
-- Accepts PNG, JPG/JPEG and PDF (first page) up to 25 MB. Files are validated by content, not just extension.
+- Accepts PNG, JPG/JPEG and PDF up to 25 MB. Files are validated by content, not just extension.
 - Handles clean CAD exports, colour plans, scans, hollow/outlined walls, hand-drafted pencil drawings and multi-storey sheets.
 - Detects walls, doors, windows, rooms (with type and OCR'd label) and fixtures/furniture.
 - **Metric scale** is read from dimension strings (`3600`, `3.6 m`, `12'6"`, `3.4 x 4.1 m`) and room areas (`12.5 m²`). If the drawing has none, it falls back to door widths.
