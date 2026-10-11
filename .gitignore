@@ -16,3 +16,5 @@ results_video/*/cache/
 results_video/*/runs/
 .vercel
 web/
+
+.env*
